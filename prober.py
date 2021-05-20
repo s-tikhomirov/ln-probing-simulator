@@ -1,6 +1,6 @@
 #! /usr/bin/python3
 
-# Copyright (c) University of Luxembourg 2020.
+# Copyright (c) University of Luxembourg 2020-2021.
 # Developed by Sergei Tikhomirov (sergey.s.tikhomirov@gmail.com), SnT Cryptolux group.
 
 from hop import Hop
