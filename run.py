@@ -25,6 +25,8 @@ from hop import Hop
 
 import random
 import argparse
+from matplotlib import pyplot as plt
+import os
 
 def generate_hop(min_N, max_N, min_capacity, max_capacity, probability_enabled, balances=None):
 	'''
@@ -182,11 +184,31 @@ def main():
 	parser = argparse.ArgumentParser(description='List the content of a folder')
 	parser.add_argument('--num_hops', default=100, type=int)
 	parser.add_argument('--use_snapshot', dest='use_snapshot', default=False, action='store_true')
+	parser.add_argument('--save_figures', dest='save_figures', default=False, action='store_true')
 	args = parser.parse_args()
 
 	CAPACITY = 2**20
-	NUM_CHANNELS_VALUES = [1,2,3]
-	PROBABILITIES = [p / 100.0 for p in range(25, 101, 25)]
+	NUM_CHANNELS_VALUES = [1,2,3,4,5,10,20,50,100]
+	PROBABILITIES = [p / 100.0 for p in range(10, 101, 10)]
+
+	probes_decreases 	= [[0 for _ in range(len(PROBABILITIES))] for _ in range(len(NUM_CHANNELS_VALUES))]
+	gains_increases 	= [[0 for _ in range(len(PROBABILITIES))] for _ in range(len(NUM_CHANNELS_VALUES))]
+	achieved_gains 		= [[0 for _ in range(len(PROBABILITIES))] for _ in range(len(NUM_CHANNELS_VALUES))]
+	for i,num_channels in enumerate(NUM_CHANNELS_VALUES):
+		print("\n\nN = ", num_channels)
+		for j,probability_enabled in enumerate(PROBABILITIES):
+			print("  probability_enabled = ", probability_enabled)
+			achieved_gain, probes_decrease, gains_increase = (
+				run_experiment_synthetic(args.num_hops, CAPACITY, num_channels, probability_enabled) )
+			achieved_gains[i][j] = achieved_gain
+			probes_decreases[i][j] = probes_decrease
+			gains_increases[i][j] = gains_increase
+	'''
+	print("\n== Results ==")
+	print("achieved_gains:\n", achieved_gains)
+	print("probes_decreases:\n", probes_decreases)
+	print("gains_increases:\n", gains_increases)
+	'''
 
 	if args.use_snapshot:
 		FILENAME = "./snapshot-2020-12-28-balances-uniform.json"
@@ -205,28 +227,50 @@ def main():
 		"0390b5d4492dc2f5318e5233ab2cebf6d48914881a33ef6a9c6bcdbb433ad986d0"
 		]
 		prober = Prober(FILENAME, "PROBER", ENTRY_NODES, ENTRY_CHANNEL_CAPACITY)
+		achieved_gain_snapshot, probes_decrease_snapshot, gains_increase_snapshot = \
+		run_experiment_snapshot(prober, args.num_hops)
+		print("\n== Results ==")
+		print("achieved_gain_snapshot:\n", achieved_gain_snapshot)
+		print("probes_decrease_snapshot:\n", probes_decrease_snapshot)
+		print("gains_increase_snapshot:\n", gains_increase_snapshot)
 
-	probes_decreases = [[0] * len(PROBABILITIES)] * len(NUM_CHANNELS_VALUES)
-	gains_increases = [[0] * len(PROBABILITIES)] * len(NUM_CHANNELS_VALUES)
-	achieved_gains = [[0] * len(PROBABILITIES)] * len(NUM_CHANNELS_VALUES)
 
-	for i,num_channels in enumerate(NUM_CHANNELS_VALUES):
-		print("\n\nN = ", num_channels)
-		for j,probability_enabled in enumerate(PROBABILITIES):
-			print("  probability_enabled = ", probability_enabled)
-			achieved_gain, probes_decrease, gains_increase = (
-				run_experiment_snapshot(prober, args.num_hops) if args.use_snapshot else \
-				run_experiment_synthetic(args.num_hops, CAPACITY, num_channels, probability_enabled) )
-			achieved_gains[i][j] = achieved_gain
-			probes_decreases[i][j] = probes_decrease
-			gains_increases[i][j] = gains_increase
+	def plot(data, snapshot_data_point, ylims, y_label, title, filename, extension=".png"):
+		# data is [[][]] where data[i][j] is the result for i channels and j-th probability
+		LABELSIZE = 20
+		LEGENDSIZE = 14
+		#TICKSIZE = 18
+		FIGSIZE = (12,7)
+		SAVE_FIGURE_TO = 'results'
+		linestyles = ['--', '-', '-.', ':']
+		plt.figure(figsize=FIGSIZE)
+		for i,data_i in enumerate(data):
+			num_channels = NUM_CHANNELS_VALUES[i]
+			plt.plot(PROBABILITIES, data_i, linestyles[i % len(linestyles)], label=str(num_channels) + "-channel hops")
+		plt.xlabel("Probability of each channel direction being enabled", fontsize=LABELSIZE)
+		plt.ylabel(y_label, fontsize=LABELSIZE)
+		plt.xlim([0, 1.5])
+		plt.ylim(ylims)
+		#plt.tight_layout()
+		if args.use_snapshot:
+			# plot one line
+			plt.plot(PROBABILITIES, [snapshot_data_point for _ in range(len(PROBABILITIES))],
+				color="red", label="Snapshot")
+		plt.legend(fontsize=LEGENDSIZE)#, loc='best', bbox_to_anchor=(0.5, 0., 0.5, 0.5))
+		if args.save_figures:
+			plt.savefig(os.path.join(SAVE_FIGURE_TO, filename + extension))
+		else:
+			plt.show()
+		plt.clf()
+
+	plot(achieved_gains, achieved_gain_snapshot if args.use_snapshot else None, [0,1.1], 
+		"Achieved information gain", "Achieved information gain (synthetic hops)", "achieved_gain_synthetic")
+	plot(probes_decreases, probes_decrease_snapshot if args.use_snapshot else None, [-0.03,0.3], 
+		"Decrease in the number of probes", "Decrease in the number of probes (synthetic hops)", "probes_decrease_synthetic")
+	# gains increases are too close to zero, no point in plotting it
 	
-	# use this for charts
-	print("\n== Results ==")
-	print("achieved_gains:\n", achieved_gains)
-	print("probes_decreases:\n", probes_decreases)
-	print("gains_increases:\n", gains_increases)
-			
+
+
 
 if __name__ == "__main__":
 	main()

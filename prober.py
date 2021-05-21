@@ -281,8 +281,6 @@ class Prober:
 						num_attempts = 0
 						while not reached_target:
 							#print("trying alternative direction...")
-							#import time
-							#time.sleep(3)
 							try:
 								num_attempts += 1
 								path_alt = next(paths_alt)
