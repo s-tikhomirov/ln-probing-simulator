@@ -209,7 +209,6 @@ def main():
 	CAPACITY = 2**20
 	NUM_CHANNELS_VALUES = [1,2,3,4,5,10,20,50,100]
 	PROBABILITIES = [p / 100.0 for p in range(10, 101, 10)]
-	args.num_snapshot_runs = 10
 	
 	probes_decreases_synthetic 	= [[0 for _ in range(len(PROBABILITIES))] for _ in range(len(NUM_CHANNELS_VALUES))]
 	gains_increases_synthetic 	= [[0 for _ in range(len(PROBABILITIES))] for _ in range(len(NUM_CHANNELS_VALUES))]
@@ -274,14 +273,15 @@ def main():
 		LABELSIZE = 20
 		LEGENDSIZE = 14
 		TICKSIZE = 18
-		FIGSIZE = (12,7)
+		FIGSIZE = (12,9)
 		SAVE_FIGURE_TO = 'results'
 		linestyles = ['--', '-', '-.', ':']
 		plt.figure(figsize=FIGSIZE)
 		for i,data_i in enumerate(data):
 			num_channels = NUM_CHANNELS_VALUES[i]
 			plt.plot(PROBABILITIES, data_i, linestyles[i % len(linestyles)], label=str(num_channels) + "-channel synthetic hops")
-		plt.xlabel("Probability of each channel being bidirectional", fontsize=LABELSIZE)
+		comment = "Runs on snapshot: " + str(args.num_snapshot_runs) + ", target hops: " + str(args.num_hops)
+		plt.xlabel("Probability of each channel being bidirectional\n" + comment, fontsize=LABELSIZE)
 		plt.ylabel(y_label, fontsize=LABELSIZE)
 		plt.xlim([0, 1.7])
 		plt.ylim(ylims)
@@ -303,9 +303,9 @@ def main():
 		plt.clf()
 
 	plot(achieved_gains_synthetic, achieved_gains_snapshot if args.use_snapshot else None, [0,1.1], 
-		"Achieved information gain", "Achieved information gain (synthetic hops)", "achieved_gain_synthetic")
+		"Achieved information gain", "Achieved information gain (synthetic hops)", "achieved_gain")
 	plot(probes_decreases_synthetic, probes_decreases_snapshot if args.use_snapshot else None, [-0.03,0.3], 
-		"Decrease in the number of probes", "Decrease in the number of probes (synthetic hops)", "probes_decrease_synthetic")
+		"Decrease in the number of probes", "Decrease in the number of probes (synthetic hops)", "probes_decrease")
 	# gains increases are too close to zero, no point in plotting it
 	
 
