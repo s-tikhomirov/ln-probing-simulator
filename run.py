@@ -291,7 +291,7 @@ def main():
 			data_stdevs = [statistics.stdev(data_ij) for data_ij in data_i]
 			plt.errorbar(PROBABILITIES, data_means,
 				yerr=data_stdevs, fmt=linestyles[i % len(linestyles)],
-				label=str(i+1) + "-channel synthetic hops")
+				label=str(NUM_CHANNELS_IN_SYNTHETIC_HOPS[i]) + "-channel synthetic hops")
 		comment = "Runs per experiment: " + str(args.num_runs_per_experiment) + ", target hops: " + str(args.num_target_hops)
 		plt.xlabel("Probability of each channel being bidirectional\n" + comment, fontsize=LABELSIZE)
 		plt.ylabel(y_label, fontsize=LABELSIZE)
