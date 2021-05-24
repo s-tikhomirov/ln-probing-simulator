@@ -14,10 +14,10 @@
 	For 1-channel hops, both information gain and the number of probes should be exactly the same.
 	A channel with capacity 2**X in a 1-channel hop always takes X probes to fully probe.
 
-	Mode 2: snapshot-based. Choose num_hops random target hops and probe them.
+	Mode 2: snapshot-based. Choose num_target_hops random target hops and probe them.
 	Accounts for path-finding, accumulates information on intermediary hops as well.
 
-	Usage example:	./run.py --num_hops=100 --use_snapshot
+	Usage example:	./run.py --num_target_hops=100 --use_snapshot
 '''
 
 from prober import Prober
@@ -28,6 +28,7 @@ import argparse
 from matplotlib import pyplot as plt
 import os
 import statistics
+import time
 
 def generate_hop(min_N, max_N, min_capacity, max_capacity, probability_bidirectional, balances=None):
 	'''
@@ -66,12 +67,12 @@ def generate_hop(min_N, max_N, min_capacity, max_capacity, probability_bidirecti
 	return Hop(capacities, enabled_dir0, enabled_dir1, balances)
 
 
-def generate_hops(num_hops, max_N, max_capacity, probability_bidirectional, all_max):
+def generate_hops(num_target_hops, max_N, max_capacity, probability_bidirectional, all_max):
 	'''
-		Generate num_hops random hops.
+		Generate num_target_hops random hops.
 
 		Parameters:
-		- num_hops: the number of hops to generate
+		- num_target_hops: the number of hops to generate
 		- max_N: maximum number of channel per hop
 		- max_capacity: maximum capacity per channel
 		- probability_bidirectional: probability that a channel is enabled in a given direction
@@ -81,9 +82,9 @@ def generate_hops(num_hops, max_N, max_capacity, probability_bidirectional, all_
 		- a list of generated hops
 	'''
 	if all_max:
-		return [generate_hop(max_N, max_N, max_capacity, max_capacity, probability_bidirectional) for _ in range(num_hops)]
+		return [generate_hop(max_N, max_N, max_capacity, max_capacity, probability_bidirectional) for _ in range(num_target_hops)]
 	else:
-		return [generate_hop(1, max_N, 1, max_capacity, probability_bidirectional) for _ in range(num_hops)]
+		return [generate_hop(1, max_N, 1, max_capacity, probability_bidirectional) for _ in range(num_target_hops)]
 
 
 def probe_single_hop(hop, naive, target_uncertainty_share=0):
@@ -146,15 +147,15 @@ def probe_synthetic_hops(hops, naive):
 	return probes, gains
 
 
-def run_experiment_synthetic(num_hops, capacity, num_channels, probability_bidirectional):
+def run_experiment_synthetic(num_target_hops, capacity, num_channels, probability_bidirectional):
 	'''
 		Run experiment on synthetic hops.
 	'''
-	hops = generate_hops(num_hops, num_channels, capacity, probability_bidirectional, all_max=True)
-	probes_naive, gains_naive 		= probe_synthetic_hops(hops, naive=True)
-	probes_optimal, gains_optimal 	= probe_synthetic_hops(hops, naive=False)
+	hops = generate_hops(num_target_hops, num_channels, capacity, probability_bidirectional, all_max=True)
+	probes_naive,	gains_naive 	= probe_synthetic_hops(hops, naive=True)
+	probes_optimal,	gains_optimal 	= probe_synthetic_hops(hops, naive=False)
 	# the gain is ~ the same, could as well return naive gain
-	avg_achieved_gain = sum(gains_optimal)/len(gains_optimal)
+	achieved_gain = sum(gains_optimal)/len(gains_optimal)
 	print("Achieved average gain (optimal - naive is close):	", 
 		round(100*sum(gains_optimal)/len(gains_optimal)), "%" )
 	probes_decrease = (sum(probes_naive) - sum(probes_optimal)) / sum(probes_naive)
@@ -163,7 +164,7 @@ def run_experiment_synthetic(num_hops, capacity, num_channels, probability_bidir
 	gains_increase = (sum(gains_optimal) - sum(gains_naive)) / sum(gains_optimal)
 	print("Optimal algorithm increases information gain by		", 
 		round(100*(gains_increase)), "%" )
-	return avg_achieved_gain, probes_decrease, gains_increase
+	return achieved_gain, probes_decrease, gains_increase
 
 
 
@@ -181,13 +182,14 @@ def run_experiment_snapshot(prober, num_target_hops):
 			"achieved gain", round(inf_gain,2), "after", num_probes, "probes")
 		return inf_gain, num_probes
 	target_hops = random.sample(prober.lnhopgraph.edges(), num_target_hops)
-	inf_gain_optimal, num_probes_optimal 	= probe_target_hops(prober, target_hops, naive=False)
-	inf_gain_naive, num_probes_naive 		= probe_target_hops(prober, target_hops, naive=True)
+	inf_gain_optimal,	num_probes_optimal 	= probe_target_hops(prober, target_hops, naive=False)
+	inf_gain_naive,		num_probes_naive 	= probe_target_hops(prober, target_hops, naive=True)
+	achieved_gain = inf_gain_optimal
 	probes_decrease = 1 - num_probes_optimal / num_probes_naive
 	gains_increase = inf_gain_optimal / inf_gain_naive - 1
 	print("Number of probes decreased by	", round(100*(probes_decrease),2), "%")
 	print("Information gain increased by	", round(100*(gains_increase),2), "%")
-	return inf_gain_optimal, probes_decrease, gains_increase
+	return achieved_gain, probes_decrease, gains_increase
 
 
 def print_data_with_mean_and_variance(data):
@@ -200,43 +202,50 @@ def print_data_with_mean_and_variance(data):
 def main():
 
 	parser = argparse.ArgumentParser(description='List the content of a folder')
-	parser.add_argument('--num_hops', default=100, type=int)
+	parser.add_argument('--num_target_hops', default=100, type=int)
 	parser.add_argument('--use_snapshot', dest='use_snapshot', default=False, action='store_true')
-	parser.add_argument('--num_snapshot_runs', default=10, type=int)
+	parser.add_argument('--num_runs_per_experiment', default=10, type=int)
 	parser.add_argument('--save_figures', dest='save_figures', default=False, action='store_true')
 	args = parser.parse_args()
 
-	CAPACITY = 2**20
-	NUM_CHANNELS_VALUES = [1,2,3,4,5,10,20,50,100]
+	CAPACITY_OF_SYNTHETIC_HOPS = 2**20
+	NUM_CHANNELS_IN_SYNTHETIC_HOPS = [1,2,3,4,5,10,20,50,100]
 	PROBABILITIES = [p / 100.0 for p in range(10, 101, 10)]
 	
-	probes_decreases_synthetic 	= [[0 for _ in range(len(PROBABILITIES))] for _ in range(len(NUM_CHANNELS_VALUES))]
-	gains_increases_synthetic 	= [[0 for _ in range(len(PROBABILITIES))] for _ in range(len(NUM_CHANNELS_VALUES))]
-	achieved_gains_synthetic 	= [[0 for _ in range(len(PROBABILITIES))] for _ in range(len(NUM_CHANNELS_VALUES))]
+	probes_decreases_synthetic 	= [[0 for _ in range(len(PROBABILITIES))] for _ in range(len(NUM_CHANNELS_IN_SYNTHETIC_HOPS))]
+	gains_increases_synthetic 	= [[0 for _ in range(len(PROBABILITIES))] for _ in range(len(NUM_CHANNELS_IN_SYNTHETIC_HOPS))]
+	achieved_gains_synthetic 	= [[0 for _ in range(len(PROBABILITIES))] for _ in range(len(NUM_CHANNELS_IN_SYNTHETIC_HOPS))]
 	
-	for i,num_channels in enumerate(NUM_CHANNELS_VALUES):
+	for i,num_channels in enumerate(NUM_CHANNELS_IN_SYNTHETIC_HOPS):
 		print("\n\nN = ", num_channels)
 		for j,probability_bidirectional in enumerate(PROBABILITIES):
 			print("  probability_bidirectional = ", probability_bidirectional)
-			achieved_gain, probes_decrease, gains_increase = (
-				run_experiment_synthetic(args.num_hops, CAPACITY, num_channels, probability_bidirectional) )
-			achieved_gains_synthetic[i][j] = achieved_gain
-			probes_decreases_synthetic[i][j] = probes_decrease
-			gains_increases_synthetic[i][j] = gains_increase
+			achieved_gain_list, probes_decrease_list, gains_increase_list = [], [], []
+			for _ in range(args.num_runs_per_experiment):
+				achieved_gain, probes_decrease, gains_increase = (
+					run_experiment_synthetic(args.num_target_hops, CAPACITY_OF_SYNTHETIC_HOPS, num_channels, probability_bidirectional) )
+				achieved_gain_list.append(achieved_gain)
+				probes_decrease_list.append(probes_decrease)
+				gains_increase_list.append(gains_increase)
+			achieved_gains_synthetic[i][j] 		= achieved_gain_list
+			probes_decreases_synthetic[i][j] 	= probes_decrease_list
+			gains_increases_synthetic[i][j] 	= gains_increase_list
 	'''
 	print("\n== Results for synthetic hops ==")
-	for i,num_channels in enumerate(NUM_CHANNELS_VALUES):
-		print(i, "channels")
-		print("achieved_gains_synthetic")
-		print_data_with_mean_and_variance(achieved_gains_synthetic[i])
-		print("probes_decreases_synthetic")
-		print_data_with_mean_and_variance(probes_decreases_synthetic[i])
-		print("gains_increases_synthetic")
-		print_data_with_mean_and_variance(gains_increases_synthetic[i])
+	for i,num_channels in enumerate(NUM_CHANNELS_IN_SYNTHETIC_HOPS):
+		print("\n\nN = ", num_channels)
+		for j,probability_bidirectional in enumerate(PROBABILITIES):
+			print("  probability_bidirectional = ", probability_bidirectional)
+			print("achieved_gains_synthetic")
+			print_data_with_mean_and_variance(achieved_gains_synthetic[i][j])
+			print("probes_decreases_synthetic")
+			print_data_with_mean_and_variance(probes_decreases_synthetic[i][j])
+			print("gains_increases_synthetic")
+			print_data_with_mean_and_variance(gains_increases_synthetic[i][j])
 	'''
 	if args.use_snapshot:
 		FILENAME = "./snapshot/listchannels-2021-05-23.json"
-		ENTRY_CHANNEL_CAPACITY = 10*100*1000*1000
+		ENTRY_CHANNEL_CAPACITY_OF_SYNTHETIC_HOPS = 10*100*1000*1000
 		# top 10 nodes by degree as per https://1ml.com/node?order=channelcount
 		ENTRY_NODES = [
 		"02ad6fb8d693dc1e4569bcedefadf5f72a931ae027dc0f0c544b34c1c6f3b9a02b",
@@ -250,15 +259,15 @@ def main():
 		"0395033b252c6f40e3756984162d68174e2bd8060a129c0d3462a9370471c6d28f",
 		"0390b5d4492dc2f5318e5233ab2cebf6d48914881a33ef6a9c6bcdbb433ad986d0"
 		]
-		prober = Prober(FILENAME, "PROBER", ENTRY_NODES, ENTRY_CHANNEL_CAPACITY)
+		prober = Prober(FILENAME, "PROBER", ENTRY_NODES, ENTRY_CHANNEL_CAPACITY_OF_SYNTHETIC_HOPS)
 		achieved_gains_snapshot, probes_decreases_snapshot, gains_increases_snapshot = [], [], []
-		for _ in range(args.num_snapshot_runs):
+		for _ in range(args.num_runs_per_experiment):
 			achieved_gain_snapshot, probes_decrease_snapshot, gains_increase_snapshot = \
-			run_experiment_snapshot(prober, args.num_hops)
+			run_experiment_snapshot(prober, args.num_target_hops)
 			achieved_gains_snapshot.append(achieved_gain_snapshot)
 			probes_decreases_snapshot.append(probes_decrease_snapshot)
 			gains_increases_snapshot.append(gains_increase_snapshot)
-		
+		'''
 		print("\n== Results for snapshot ==")
 		print("achieved_gains_snapshot")
 		print_data_with_mean_and_variance(achieved_gains_snapshot)
@@ -266,7 +275,7 @@ def main():
 		print_data_with_mean_and_variance(probes_decreases_snapshot)
 		print("gains_increases_snapshot")
 		print_data_with_mean_and_variance(gains_increases_snapshot)
-
+		'''
 
 	def plot(data, snapshot_data, ylims, y_label, title, filename, extension=".png"):
 		# data is [[][]] where data[i][j] is the result for i channels and j-th probability
@@ -278,21 +287,23 @@ def main():
 		linestyles = ['--', '-', '-.', ':']
 		plt.figure(figsize=FIGSIZE)
 		for i,data_i in enumerate(data):
-			num_channels = NUM_CHANNELS_VALUES[i]
-			plt.plot(PROBABILITIES, data_i, linestyles[i % len(linestyles)], label=str(num_channels) + "-channel synthetic hops")
-		comment = "Runs on snapshot: " + str(args.num_snapshot_runs) + ", target hops: " + str(args.num_hops)
+			data_means = [statistics.mean(data_ij) for data_ij in data_i]
+			data_stdevs = [statistics.stdev(data_ij) for data_ij in data_i]
+			plt.errorbar(PROBABILITIES, data_means,
+				yerr=data_stdevs, fmt=linestyles[i % len(linestyles)],
+				label=str(i+1) + "-channel synthetic hops")
+		comment = "Runs per experiment: " + str(args.num_runs_per_experiment) + ", target hops: " + str(args.num_target_hops)
 		plt.xlabel("Probability of each channel being bidirectional\n" + comment, fontsize=LABELSIZE)
 		plt.ylabel(y_label, fontsize=LABELSIZE)
 		plt.xlim([0, 1.7])
 		plt.ylim(ylims)
 		#plt.tight_layout()
 		if args.use_snapshot:
-			# plot one line with error bars
 			snapshot_data_mean = statistics.mean(snapshot_data)
 			snapshot_data_stdev = statistics.stdev(snapshot_data)
 			plt.errorbar(PROBABILITIES, [snapshot_data_mean for _ in range(len(PROBABILITIES))],
 				yerr=snapshot_data_stdev, fmt='-',
-				color="red", label="Snapshot (avg of " + str(args.num_snapshot_runs) + " runs)")
+				color="red", label="Snapshot")
 		plt.tick_params(axis='x', labelsize=TICKSIZE)
 		plt.tick_params(axis='y', labelsize=TICKSIZE)
 		plt.legend(fontsize=LEGENDSIZE)#, loc='best', bbox_to_anchor=(0.5, 0., 0.5, 0.5))
@@ -307,8 +318,13 @@ def main():
 	plot(probes_decreases_synthetic, probes_decreases_snapshot if args.use_snapshot else None, [-0.03,0.3], 
 		"Decrease in the number of probes", "Decrease in the number of probes (synthetic hops)", "probes_decrease")
 	# gains increases are too close to zero, no point in plotting it
-	
+	print("Finished experiment:", 
+		args.num_target_hops, "target hops,", 
+		args.num_runs_per_experiment, "runs per parameter combination.")
 
 
 if __name__ == "__main__":
+	start_time = time.time()
 	main()
+	end_time = time.time()
+	print("Completed in", round(end_time - start_time), "seconds.")

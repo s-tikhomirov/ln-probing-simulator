@@ -51,6 +51,10 @@ class Hop:
 		self.reset()
 
 
+	def capacity(self):
+		return sum(self.capacities)
+
+
 	def __update_dependent_hop_properties(self):
 		'''
 			Each of the four bounds (h_l, h_u, g_l, g_u) correspond to a rectangle.
