@@ -27,8 +27,9 @@ import random
 import argparse
 from matplotlib import pyplot as plt
 import os
+import statistics
 
-def generate_hop(min_N, max_N, min_capacity, max_capacity, probability_enabled, balances=None):
+def generate_hop(min_N, max_N, min_capacity, max_capacity, probability_bidirectional, balances=None):
 	'''
 		Generate a random hop.
 
@@ -37,7 +38,7 @@ def generate_hop(min_N, max_N, min_capacity, max_capacity, probability_enabled, 
 		- max_N: maximum number of channels
 		- min_capacity: minimum capacity of one channel
 		- max_capacity: maximum capacity of one channel
-		- probability_enabled: probability that a channel is enabled in a given direction
+		- probability_bidirectional: probability that a channel is enabled in both directions
 		- balances: channel balances (generated randomly if None)
 
 		Return:
@@ -46,16 +47,26 @@ def generate_hop(min_N, max_N, min_capacity, max_capacity, probability_enabled, 
 	N = random.randint(min_N, max_N)
 	capacities = [random.randint(min_capacity, max_capacity) for _ in range(N)]
 	# avoid generating hops disabled in both directions (we can't probe them anyway)
-	enabled_in_one_direction = False
-	while not enabled_in_one_direction:
-		enabled_dir0 = [i for i in range(N) if random.random() < probability_enabled]
-		enabled_dir1 = [i for i in range(N) if random.random() < probability_enabled]
-		enabled_in_one_direction = enabled_dir0 or enabled_dir0
+	hop_enabled_in_one_direction = False
+	while not hop_enabled_in_one_direction:
+		enabled_dir0 = []
+		enabled_dir1 = []
+		for i in range(N):
+			is_bidirectional = random.random() < probability_bidirectional
+			if is_bidirectional:
+				enabled_dir0.append(i)
+				enabled_dir1.append(i)
+			else:
+				if random.random() < probability_bidirectional:
+					enabled_dir0.append(i)
+				else:
+					enabled_dir0.append(i)
+		hop_enabled_in_one_direction = enabled_dir0 or enabled_dir0
 	#print("Generating hop: capacities", capacities, "enabled_dir0", enabled_dir0, "enabled_dir1", enabled_dir1)
 	return Hop(capacities, enabled_dir0, enabled_dir1, balances)
 
 
-def generate_hops(num_hops, max_N, max_capacity, probability_enabled, all_max):
+def generate_hops(num_hops, max_N, max_capacity, probability_bidirectional, all_max):
 	'''
 		Generate num_hops random hops.
 
@@ -63,16 +74,16 @@ def generate_hops(num_hops, max_N, max_capacity, probability_enabled, all_max):
 		- num_hops: the number of hops to generate
 		- max_N: maximum number of channel per hop
 		- max_capacity: maximum capacity per channel
-		- probability_enabled: probability that a channel is enabled in a given direction
+		- probability_bidirectional: probability that a channel is enabled in a given direction
 		- all_max: if True, minimal N and capacity = max values; if False, both equal 1
 
 		Return:
 		- a list of generated hops
 	'''
 	if all_max:
-		return [generate_hop(max_N, max_N, max_capacity, max_capacity, probability_enabled) for _ in range(num_hops)]
+		return [generate_hop(max_N, max_N, max_capacity, max_capacity, probability_bidirectional) for _ in range(num_hops)]
 	else:
-		return [generate_hop(1, max_N, 1, max_capacity, probability_enabled) for _ in range(num_hops)]
+		return [generate_hop(1, max_N, 1, max_capacity, probability_bidirectional) for _ in range(num_hops)]
 
 
 def probe_single_hop(hop, naive, target_uncertainty_share=0):
@@ -135,11 +146,11 @@ def probe_synthetic_hops(hops, naive):
 	return probes, gains
 
 
-def run_experiment_synthetic(num_hops, capacity, num_channels, probability_enabled):
+def run_experiment_synthetic(num_hops, capacity, num_channels, probability_bidirectional):
 	'''
 		Run experiment on synthetic hops.
 	'''
-	hops = generate_hops(num_hops, num_channels, capacity, probability_enabled, all_max=True)
+	hops = generate_hops(num_hops, num_channels, capacity, probability_bidirectional, all_max=True)
 	probes_naive, gains_naive 		= probe_synthetic_hops(hops, naive=True)
 	probes_optimal, gains_optimal 	= probe_synthetic_hops(hops, naive=False)
 	# the gain is ~ the same, could as well return naive gain
@@ -179,39 +190,53 @@ def run_experiment_snapshot(prober, num_target_hops):
 	return inf_gain_optimal, probes_decrease, gains_increase
 
 
+def print_data_with_mean_and_variance(data):
+	print(data)
+	print("  mean:		", 	statistics.mean(data))
+	print("  stdev:	", 		statistics.stdev(data))
+	print("  variance:	",	statistics.variance(data))
+
+
 def main():
 
 	parser = argparse.ArgumentParser(description='List the content of a folder')
 	parser.add_argument('--num_hops', default=100, type=int)
 	parser.add_argument('--use_snapshot', dest='use_snapshot', default=False, action='store_true')
+	parser.add_argument('--num_snapshot_runs', default=10, type=int)
 	parser.add_argument('--save_figures', dest='save_figures', default=False, action='store_true')
 	args = parser.parse_args()
 
 	CAPACITY = 2**20
 	NUM_CHANNELS_VALUES = [1,2,3,4,5,10,20,50,100]
 	PROBABILITIES = [p / 100.0 for p in range(10, 101, 10)]
-
-	probes_decreases 	= [[0 for _ in range(len(PROBABILITIES))] for _ in range(len(NUM_CHANNELS_VALUES))]
-	gains_increases 	= [[0 for _ in range(len(PROBABILITIES))] for _ in range(len(NUM_CHANNELS_VALUES))]
-	achieved_gains 		= [[0 for _ in range(len(PROBABILITIES))] for _ in range(len(NUM_CHANNELS_VALUES))]
+	args.num_snapshot_runs = 10
+	
+	probes_decreases_synthetic 	= [[0 for _ in range(len(PROBABILITIES))] for _ in range(len(NUM_CHANNELS_VALUES))]
+	gains_increases_synthetic 	= [[0 for _ in range(len(PROBABILITIES))] for _ in range(len(NUM_CHANNELS_VALUES))]
+	achieved_gains_synthetic 	= [[0 for _ in range(len(PROBABILITIES))] for _ in range(len(NUM_CHANNELS_VALUES))]
+	
 	for i,num_channels in enumerate(NUM_CHANNELS_VALUES):
 		print("\n\nN = ", num_channels)
-		for j,probability_enabled in enumerate(PROBABILITIES):
-			print("  probability_enabled = ", probability_enabled)
+		for j,probability_bidirectional in enumerate(PROBABILITIES):
+			print("  probability_bidirectional = ", probability_bidirectional)
 			achieved_gain, probes_decrease, gains_increase = (
-				run_experiment_synthetic(args.num_hops, CAPACITY, num_channels, probability_enabled) )
-			achieved_gains[i][j] = achieved_gain
-			probes_decreases[i][j] = probes_decrease
-			gains_increases[i][j] = gains_increase
+				run_experiment_synthetic(args.num_hops, CAPACITY, num_channels, probability_bidirectional) )
+			achieved_gains_synthetic[i][j] = achieved_gain
+			probes_decreases_synthetic[i][j] = probes_decrease
+			gains_increases_synthetic[i][j] = gains_increase
 	'''
-	print("\n== Results ==")
-	print("achieved_gains:\n", achieved_gains)
-	print("probes_decreases:\n", probes_decreases)
-	print("gains_increases:\n", gains_increases)
+	print("\n== Results for synthetic hops ==")
+	for i,num_channels in enumerate(NUM_CHANNELS_VALUES):
+		print(i, "channels")
+		print("achieved_gains_synthetic")
+		print_data_with_mean_and_variance(achieved_gains_synthetic[i])
+		print("probes_decreases_synthetic")
+		print_data_with_mean_and_variance(probes_decreases_synthetic[i])
+		print("gains_increases_synthetic")
+		print_data_with_mean_and_variance(gains_increases_synthetic[i])
 	'''
-
 	if args.use_snapshot:
-		FILENAME = "./snapshot-2020-12-28-balances-uniform.json"
+		FILENAME = "./snapshot/listchannels-2021-05-23.json"
 		ENTRY_CHANNEL_CAPACITY = 10*100*1000*1000
 		# top 10 nodes by degree as per https://1ml.com/node?order=channelcount
 		ENTRY_NODES = [
@@ -227,35 +252,49 @@ def main():
 		"0390b5d4492dc2f5318e5233ab2cebf6d48914881a33ef6a9c6bcdbb433ad986d0"
 		]
 		prober = Prober(FILENAME, "PROBER", ENTRY_NODES, ENTRY_CHANNEL_CAPACITY)
-		achieved_gain_snapshot, probes_decrease_snapshot, gains_increase_snapshot = \
-		run_experiment_snapshot(prober, args.num_hops)
-		print("\n== Results ==")
-		print("achieved_gain_snapshot:\n", achieved_gain_snapshot)
-		print("probes_decrease_snapshot:\n", probes_decrease_snapshot)
-		print("gains_increase_snapshot:\n", gains_increase_snapshot)
+		achieved_gains_snapshot, probes_decreases_snapshot, gains_increases_snapshot = [], [], []
+		for _ in range(args.num_snapshot_runs):
+			achieved_gain_snapshot, probes_decrease_snapshot, gains_increase_snapshot = \
+			run_experiment_snapshot(prober, args.num_hops)
+			achieved_gains_snapshot.append(achieved_gain_snapshot)
+			probes_decreases_snapshot.append(probes_decrease_snapshot)
+			gains_increases_snapshot.append(gains_increase_snapshot)
+		
+		print("\n== Results for snapshot ==")
+		print("achieved_gains_snapshot")
+		print_data_with_mean_and_variance(achieved_gains_snapshot)
+		print("probes_decreases_snapshot")
+		print_data_with_mean_and_variance(probes_decreases_snapshot)
+		print("gains_increases_snapshot")
+		print_data_with_mean_and_variance(gains_increases_snapshot)
 
 
-	def plot(data, snapshot_data_point, ylims, y_label, title, filename, extension=".png"):
+	def plot(data, snapshot_data, ylims, y_label, title, filename, extension=".png"):
 		# data is [[][]] where data[i][j] is the result for i channels and j-th probability
 		LABELSIZE = 20
 		LEGENDSIZE = 14
-		#TICKSIZE = 18
+		TICKSIZE = 18
 		FIGSIZE = (12,7)
 		SAVE_FIGURE_TO = 'results'
 		linestyles = ['--', '-', '-.', ':']
 		plt.figure(figsize=FIGSIZE)
 		for i,data_i in enumerate(data):
 			num_channels = NUM_CHANNELS_VALUES[i]
-			plt.plot(PROBABILITIES, data_i, linestyles[i % len(linestyles)], label=str(num_channels) + "-channel hops")
-		plt.xlabel("Probability of each channel direction being enabled", fontsize=LABELSIZE)
+			plt.plot(PROBABILITIES, data_i, linestyles[i % len(linestyles)], label=str(num_channels) + "-channel synthetic hops")
+		plt.xlabel("Probability of each channel being bidirectional", fontsize=LABELSIZE)
 		plt.ylabel(y_label, fontsize=LABELSIZE)
-		plt.xlim([0, 1.5])
+		plt.xlim([0, 1.7])
 		plt.ylim(ylims)
 		#plt.tight_layout()
 		if args.use_snapshot:
-			# plot one line
-			plt.plot(PROBABILITIES, [snapshot_data_point for _ in range(len(PROBABILITIES))],
-				color="red", label="Snapshot")
+			# plot one line with error bars
+			snapshot_data_mean = statistics.mean(snapshot_data)
+			snapshot_data_stdev = statistics.stdev(snapshot_data)
+			plt.errorbar(PROBABILITIES, [snapshot_data_mean for _ in range(len(PROBABILITIES))],
+				yerr=snapshot_data_stdev, fmt='-',
+				color="red", label="Snapshot (avg of " + str(args.num_snapshot_runs) + " runs)")
+		plt.tick_params(axis='x', labelsize=TICKSIZE)
+		plt.tick_params(axis='y', labelsize=TICKSIZE)
 		plt.legend(fontsize=LEGENDSIZE)#, loc='best', bbox_to_anchor=(0.5, 0., 0.5, 0.5))
 		if args.save_figures:
 			plt.savefig(os.path.join(SAVE_FIGURE_TO, filename + extension))
@@ -263,13 +302,12 @@ def main():
 			plt.show()
 		plt.clf()
 
-	plot(achieved_gains, achieved_gain_snapshot if args.use_snapshot else None, [0,1.1], 
+	plot(achieved_gains_synthetic, achieved_gains_snapshot if args.use_snapshot else None, [0,1.1], 
 		"Achieved information gain", "Achieved information gain (synthetic hops)", "achieved_gain_synthetic")
-	plot(probes_decreases, probes_decrease_snapshot if args.use_snapshot else None, [-0.03,0.3], 
+	plot(probes_decreases_synthetic, probes_decreases_snapshot if args.use_snapshot else None, [-0.03,0.3], 
 		"Decrease in the number of probes", "Decrease in the number of probes (synthetic hops)", "probes_decrease_synthetic")
 	# gains increases are too close to zero, no point in plotting it
 	
-
 
 
 if __name__ == "__main__":

@@ -8,6 +8,15 @@ from hop import Hop
 import networkx as nx
 import json
 
+class Channel:
+	def __init__(self, source, destination, capacity, dir0_enabled, dir1_enabled):
+		self.source = source
+		self.destination = destination
+		self.capacity = capacity
+		self.dir0_enabled = dir0_enabled
+		self.dir1_enabled = dir1_enabled
+
+
 def create_multigraph_from_snapshot(snapshot_filename):
 	print("Creating LnHopGraph from file:", snapshot_filename)
 	with open(snapshot_filename, 'r') as snapshot_file:
@@ -15,15 +24,41 @@ def create_multigraph_from_snapshot(snapshot_filename):
 	edges_set = set()
 	nodes_set = set()
 	edges = []
-	for channel in network["channels"]:
-		cid = channel["short_channel_id"]
-		source = channel["source"]
-		destination = channel["destination"]
-		edges.append((source, destination, cid,
+	# cid -> Channel
+	channels = dict()
+	for channel_direction in network["channels"]:
+		cid = channel_direction["short_channel_id"]
+		is_dir0 = channel_direction["source"] < channel_direction["destination"]
+		if is_dir0:
+			source = channel_direction["source"]
+			destination = channel_direction["destination"]
+		else:
+			source = channel_direction["destination"]
+			destination = channel_direction["source"]
+		if cid not in channels:
+			#print("creating new channel for", cid)
+			dir0_enabled, dir1_enabled = \
+			(channel_direction["active"], False) if is_dir0 else (False, channel_direction["active"])
+			channel = Channel(source, destination, channel_direction["satoshis"], dir0_enabled, dir1_enabled)
+			channels[cid] = channel
+		else:
+			#print("updating existing channels for", cid)
+			channel = channels[cid]
+			if is_dir0:
+				channel.dir0_enabled = channel_direction["active"]
+			else:
+				channel.dir1_enabled = channel_direction["active"]
+	# count how many uni-directional channels we have
+	#num_bidirectional = sum([1 for cid in channels if channels[cid].dir0_enabled and channels[cid].dir1_enabled ])
+	#print("Total channels:", len(channels))
+	#print("num_bidirectional:", num_bidirectional)
+	for cid in channels:
+		channel = channels[cid]
+		edges.append((channel.source, channel.destination, cid,
 			{
-			"capacity": channel["satoshis"],
-			"dir0_enabled": channel["dir0"]["enabled"],
-			"dir1_enabled": channel["dir1"]["enabled"],
+			"capacity": channel.capacity,
+			"dir0_enabled": channel.dir0_enabled,
+			"dir1_enabled": channel.dir1_enabled,
 			}))
 		edges_set.add(cid)
 		nodes_set.add(source)
