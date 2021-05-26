@@ -280,7 +280,9 @@ class Hop:
 
 
 	def next_dir(self):
-		assert(self.can_forward_dir0 or self.can_forward_dir1)
+		if not (self.can_forward_dir0 or self.can_forward_dir1):
+			print("Hop disabled in both directions:", self)
+			return None
 		if self.can_forward_dir0 != self.can_forward_dir1:
 			if not self.can_forward_dir0:
 				chosen_dir0 = False

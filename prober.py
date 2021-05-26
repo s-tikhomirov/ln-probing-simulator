@@ -180,6 +180,9 @@ class Prober:
 			#print("Current uncertainty:", hop.uncertainty)
 			#print("Current diffs:", hop.h_u - hop.h_l, hop.g_u - hop.g_l)
 			chosen_dir0 = hop.next_dir()
+			if chosen_dir0 is None:
+				#print("Hop is disabled in both directions, cannot probe")
+				break
 			amount = hop.next_a(chosen_dir0, naive)
 			#print("Suggesting amount", amount, "in", "dir0" if chosen_dir0 else "dir1")
 			target_hop_is_in_dir0 = target_hop[0] < target_hop[1]
@@ -194,7 +197,7 @@ class Prober:
 					reached_target = self.issue_probe_along_path(path, amount)
 					num_probes += 1
 				except StopIteration:
-					#print("Cannot find paths to", target_hop)
+					#print("Cannot find paths in one direction")
 					no_paths = True
 					#break				
 				if num_attempts > max_attempts_per_direction:
@@ -209,6 +212,7 @@ class Prober:
 						amount_alt = hop.next_a(alt_dir, naive)
 						paths_alt = self.paths_for_amount(target_hop_in_order_alt, amount_alt)
 						num_attempts = 0
+						no_paths = False
 						while not reached_target:
 							#print("trying alternative direction...")
 							try:
@@ -217,11 +221,17 @@ class Prober:
 								reached_target = self.issue_probe_along_path(path_alt, amount_alt)
 								num_probes += 1
 							except StopIteration:
-								#print("Cannot find paths to", target_hop)
+								no_paths = True
+								print("Path iteration stopped.")
 								break				
 							if num_attempts > max_attempts_per_direction:
-								#print("Cannot reach target after", num_attempts, "attempts in alternative direction")
+								no_paths = True
 								break
+				if no_paths:
+					print("Cannot reach target after", num_attempts, "attempts in alternative direction")
+					print(target_hop)
+					#print(self.lnhopgraph[target_hop[0]][target_hop[1]]["hop"])
+					#exit()
 		return num_probes
 
 
