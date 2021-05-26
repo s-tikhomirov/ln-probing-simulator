@@ -292,12 +292,7 @@ class Hop:
 			diff_dir0 = self.h_u - self.h_l
 			diff_dir1 = self.g_u - self.g_l
 			chosen_dir0 = diff_dir0 >= diff_dir1
-			'''
-			if diff_dir0 == diff_dir1:
-				chosen_dir0 = random.random() < 0.5
-			else:
-				chosen_dir0 = diff_dir0 > diff_dir1
-			'''
+			#chosen_dir0 = random.random() < 0.5
 		return chosen_dir0
 
 

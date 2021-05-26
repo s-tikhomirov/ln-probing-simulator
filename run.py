@@ -175,8 +175,7 @@ def experiment_1(num_target_hops, num_runs_per_experiment, max_num_channels, use
 	BITCOIN = 100*1000*1000
 	MIN_CAPACITY_OF_SYNTHETIC_HOPS = 0.01 	* BITCOIN
 	MAX_CAPACITY_OF_SYNTHETIC_HOPS = 10 	* BITCOIN
-	#NUM_CHANNELS_IN_TARGET_HOPS = [n for n in range(1, max_num_channels + 1)]
-	NUM_CHANNELS_IN_TARGET_HOPS = [n for n in range(max_num_channels, max_num_channels + 1)]
+	NUM_CHANNELS_IN_TARGET_HOPS = [n for n in range(1, max_num_channels + 1)]
 
 	gains_naive_synthetic 		= [0 for _ in range(len(NUM_CHANNELS_IN_TARGET_HOPS))]
 	gains_optimal_synthetic 	= [0 for _ in range(len(NUM_CHANNELS_IN_TARGET_HOPS))]
@@ -426,15 +425,17 @@ def experiment_3(num_target_hops, num_runs_per_experiment, max_ratio):
 	comment = "Runs per experiment: " + str(num_runs_per_experiment) + ", target hops: " + str(num_target_hops)
 	plot(
 		x_data		= RATIOS,
-		y_data_list = [(achieved_gains_ratios,"")], 
-		x_label 	= "Ratio of capacities\n" + comment,
+		y_data_list = [(achieved_gains_ratios, "Isolated probing (naive = optimal)", "-", "blue")], 
+		x_label 	= "Ratio of capacities. " + comment,
 		y_label 	= "Achieved information gain",
 		title		= "Achieved information gain (synthetic hops)",
 		filename 	= "ratios_gains")
 	plot(
 		x_data		= RATIOS,
-		y_data_list = [(speed_naive_ratios,"Naive method"),(speed_optimal_ratios, "Optimal method")], 
-		x_label 	= "Ratio of capacities\n" + comment,
+		y_data_list = [
+		(speed_naive_ratios, "Isolated probing, naive", "-", "red"),
+		(speed_optimal_ratios, "Isolated probing, optimal", "-", "green")], 
+		x_label 	= "Ratio of capacities. " + comment,
 		y_label 	= "Probing speed (bits / probe)", 
 		title 		= "Probing speed with naive and optimal methods (synthetic hops)",
 		filename 	= "ratios_speed")
