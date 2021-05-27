@@ -71,7 +71,7 @@ def generate_hops(num_target_hops, N, min_capacity, max_capacity, probability_bi
 	return [generate_hop(N, N, min_capacity, max_capacity, probability_bidirectional) for _ in range(num_target_hops)]
 
 
-def probe_single_hop(hop, naive, target_uncertainty_share=0):
+def probe_single_hop_without_jamming(hop, naive):
 	'''
 		Do a series of probes until the hop is fully probed.
 	'''
@@ -86,18 +86,39 @@ def probe_single_hop(hop, naive, target_uncertainty_share=0):
 		amount = hop.next_a(is_dir0 = chosen_dir0, naive=naive)
 		hop.probe(is_dir0=chosen_dir0, amount=amount)
 		num_probes += 1
-		current_uncertainty = hop.uncertainty
-		current_uncertainty_share = current_uncertainty / initial_uncertainty
-		if current_uncertainty_share  < target_uncertainty_share:
-			#print("\n----------\nTarget reached: current uncertainty share = ", current_uncertainty_share)
-			break
 	final_uncertainty = hop.uncertainty
 	gain = initial_uncertainty - final_uncertainty
 	# return gain in bits and used number of probes
 	return gain, num_probes
 
 
-def probe_synthetic_hops(hops, naive):
+def probe_single_hop_with_jamming(hop, naive):
+	# probe channels one by one by jamming everything else
+	gain, num_probes = 0, 0
+	initial_uncertainty = hop.uncertainty
+	final_uncertainty = 0
+	for n in range(hop.N):
+		hop_n = hop.extract_channel_as_hop(n)
+		_, num_probes_ = probe_single_hop_without_jamming(hop_n, naive)
+		balance_guessed = hop.guess_true_balance(hop_n.B[0], n)
+		if not balance_guessed:
+			print("Wrongly guessed balance for channel", n, "stopping.")
+			exit()
+		num_probes += num_probes_
+	final_uncertainty = 0 	# we have guessed all balances!
+	gain = initial_uncertainty - final_uncertainty
+	return gain, num_probes
+
+
+def probe_single_hop(hop, naive, jamming=False):
+	if jamming:
+		gain, num_probes = probe_single_hop_with_jamming(hop, naive)
+	else:
+		gain, num_probes = probe_single_hop_without_jamming(hop, naive)
+	return gain, num_probes
+
+
+def probe_synthetic_hops(hops, naive, jamming=False):
 	'''
 		Probe each hop from a list of hops.
 	'''
@@ -106,13 +127,17 @@ def probe_synthetic_hops(hops, naive):
 	initial_uncertainty_total = sum([hop.uncertainty for hop in hops])
 	gains, probes_list = [], []
 	for hop in hops:
-		gain, probes = probe_single_hop(hop, naive=naive)
+		gain, probes = probe_single_hop(hop, naive=naive, jamming=jamming)
 		gains.append(gain)
 		probes_list.append(probes)
-	#print("\nProbed with method:", "naive" if naive else "optimal")
+	#print("\nProbed with method:", "naive" if naive else "optimal", "with jamming" if jamming else "without jamming")
 	#print("Total gain:		", round(sum(gains),2), "after", sum(probes_list), "probes")
-	#print("Average per hop:	", round(sum(gains)/len(gains),2), "after", sum(probes_list)/len(probes), "probes")
-	final_uncertainty_total = sum([hop.uncertainty for hop in hops])
+	#print("Average per hop:	", round(sum(gains)/len(gains),2), "after", sum(probes_list)/len(probes_list), "probes")
+	if jamming:
+		final_uncertainty_total = 0
+	else:
+		final_uncertainty_total = sum([hop.uncertainty for hop in hops])
+	#print("Final uncertainty:", final_uncertainty_total)
 	total_gain_bits = initial_uncertainty_total - final_uncertainty_total
 	probing_speed = total_gain_bits / sum(probes_list)
 	total_gain = total_gain_bits / initial_uncertainty_total
@@ -122,7 +147,7 @@ def probe_synthetic_hops(hops, naive):
 
 
 def print_data_with_mean_and_variance(data):
-	print(data)
+	#print(data)
 	print("  mean:		", 	statistics.mean(data))
 	print("  stdev:	", 		statistics.stdev(data))
 	print("  variance:	",	statistics.variance(data))
@@ -441,6 +466,41 @@ def experiment_3(num_target_hops, num_runs_per_experiment, max_ratio):
 		filename 	= "ratios_speed")
 
 
+def experiment_4(num_target_hops, num_runs_per_experiment):
+	'''
+		PoC jamming for 3-channel hops
+	'''
+	BITCOIN = 100*1000*1000
+	MIN_CAPACITY_OF_SYNTHETIC_HOPS = 0.01 	* BITCOIN
+	MAX_CAPACITY_OF_SYNTHETIC_HOPS = 10 	* BITCOIN
+	NUM_CHANNELS_IN_TARGET_HOPS = 3
+
+	gains, gains_j, speeds, speeds_j = [], [], [], []
+
+	for _ in range(num_runs_per_experiment):
+		target_hops = generate_hops(num_target_hops, NUM_CHANNELS_IN_TARGET_HOPS, 
+					MIN_CAPACITY_OF_SYNTHETIC_HOPS, MAX_CAPACITY_OF_SYNTHETIC_HOPS)
+		gain,	speed 		= probe_synthetic_hops(target_hops, naive=False, jamming=False)
+		gain_j,	speed_j 	= probe_synthetic_hops(target_hops, naive=False, jamming=True)
+		gains.append(gain)
+		gains_j.append(gain_j)
+		speeds.append(speed)
+		speeds_j.append(speed_j)
+
+	print("Without jamming:")
+	print("Gain:")
+	print_data_with_mean_and_variance(gains)
+	print("Speed:")
+	print_data_with_mean_and_variance(speeds)
+
+	print("With jamming:")
+	print("Gain:")
+	print_data_with_mean_and_variance(gains_j)
+	print("Gain:")
+	print_data_with_mean_and_variance(speeds_j)
+
+
+
 
 def main():
 
@@ -455,9 +515,10 @@ def main():
 		print("Too high max_num_channels: snapshot doesn't have that many hops with that many channels.")
 		exit()
 	
-	experiment_1(args.num_target_hops, args.num_runs_per_experiment, args.max_num_channels, args.use_snapshot)
+	#experiment_1(args.num_target_hops, args.num_runs_per_experiment, args.max_num_channels, args.use_snapshot)
 	#experiment_2(args.num_target_hops, args.num_runs_per_experiment)
 	#experiment_3(args.num_target_hops, args.num_runs_per_experiment, max_ratio=10)
+	experiment_4(args.num_target_hops, args.num_runs_per_experiment)
 
 	
 

@@ -67,8 +67,8 @@ class Hop:
 		self.R_g_u = ProbingRectangle(self, is_dir0 = False, bound = self.g_u)
 		self.S_F = self.__S_F()
 		self.uncertainty = max(0, log2(self.S_F) - log2(self.granularity))
-		assert(self.h_l < self.h <= self.h_u), self
-		assert(self.g_l < self.g <= self.g_u), self
+		assert(self.h_l < self.h <= self.h_u), (self.h_l, self.h, self.h_u)
+		assert(self.g_l < self.g <= self.g_u), (self.g_l, self.g, self.g_u)
 
 
 	def reset(self):
@@ -341,6 +341,8 @@ class Hop:
 				if probe_passed:
 					# sic! lower bounds are strict
 					self.h_l = amount - 1
+					# FIXME: in probing context, instead of self.N it should be
+					# "the number of channels enabled in at least one direction (?)"
 					if (self.N == 1 or should_update_dir1) and self.can_forward_dir1:
 						self.g_u = self.capacities[0] - amount
 				else:
@@ -366,3 +368,55 @@ class Hop:
 		self.__assert_hop_correct()
 		return probe_passed
 
+
+	def extract_channel_as_hop(self, channel_index):
+		'''
+		The simplest implementation of jamming
+		'''
+		assert(channel_index < self.N)
+		return Hop(
+			capacities = [self.capacities[channel_index]],
+			e_dir0 = [0] if channel_index in self.e_dir0 else [],
+			e_dir1 = [0] if channel_index in self.e_dir1 else [],
+			balances = [self.B[channel_index]])
+
+
+	def guess_true_balance(self, balance, channel_index):
+		assert(channel_index < self.N)
+		assert(balance <= self.capacities[channel_index])
+		guessed = self.B[channel_index] == balance
+		# updating the estimates : will partially speed up the jamming-enhanced probing
+		# can only update lower bounds
+		if channel_index in self.e_dir0:
+			self.h_l = max(balance - 1, self.h_l)
+		if channel_index in self.e_dir1:
+			balance_dir1 = self.capacities[channel_index] - balance
+			self.g_l = max(balance_dir1 - 1, self.g_l)
+		self.__update_dependent_hop_properties()
+		self.__assert_hop_correct()
+		return guessed
+		
+
+	'''
+	def jam(self, channel_index):
+		if channel_index in self.e_dir0:
+			self.e_dir0.remove(channel_index)
+		if channel_index in self.e_dir1:
+			self.e_dir1.remove(channel_index)
+	
+	def jam_all_except(self, channel_index):
+		assert(channel_index < self.N)
+		for n in range(self.N):
+			if n != channel_index:
+				self.jam(n)
+
+	def unjam(self, channel_index):
+		if channel_index not in self.e_dir0:
+			self.e_dir0.append(channel_index)
+		if channel_index not in self.e_dir1:
+			self.e_dir1.append(channel_index)
+
+	def unjam_all(self):
+		for n in range(self.N):
+			self.unjam(n)
+	'''
