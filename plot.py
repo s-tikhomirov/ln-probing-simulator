@@ -20,8 +20,8 @@ def plot(x_data, y_data_list, x_label, y_label, title, filename, extension=".png
 	#linestyles = ['-', '--', '-.', ':']
 	plt.figure(figsize=FIGSIZE)
 	for data in y_data_list:
-		data_means = [statistics.mean(data_i) 		for data_i in data[0]]
-		data_stdevs = [statistics.stdev(data_i) 	for data_i in data[0]]
+		data_means = [statistics.mean(data_i) for data_i in data[0]]
+		data_stdevs = [statistics.stdev(data_i) if len(data_i) > 1 else 0 for data_i in data[0]]
 		linestyle = data[2] if data[2] else "-"
 		color = data[3] if data[3] else None
 		if color:

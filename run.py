@@ -78,13 +78,13 @@ def probe_single_hop_without_jamming(hop, naive):
 	initial_uncertainty = hop.uncertainty
 	assert(initial_uncertainty > 0), str(initial_uncertainty) + "\n" + str(hop)
 	num_probes = 0
-	while (hop.h_u - hop.h_l > 1 and hop.g_u - hop.g_l > 1):
+	while hop.worth_probing():
 		chosen_dir0 = hop.next_dir()
 		if chosen_dir0 is None:
-			#print("Hop is disabled in both directions, cannot probe")
+			print("Hop is disabled in both directions, cannot probe")
 			break
-		amount = hop.next_a(is_dir0 = chosen_dir0, naive=naive)
-		hop.probe(is_dir0=chosen_dir0, amount=amount)
+		amount = hop.next_a(chosen_dir0, naive)
+		hop.probe(chosen_dir0, amount)
 		num_probes += 1
 	final_uncertainty = hop.uncertainty
 	gain = initial_uncertainty - final_uncertainty
@@ -118,7 +118,7 @@ def probe_single_hop(hop, naive, jamming=False):
 	return gain, num_probes
 
 
-def probe_synthetic_hops(hops, naive, jamming=False):
+def probe_hops_isolated(hops, naive, jamming=False):
 	'''
 		Probe each hop from a list of hops.
 	'''
@@ -181,7 +181,7 @@ def choose_target_hops_with_n_channels(lnhopgraph, max_num_target_hops, num_chan
 	return potential_target_hops[:max_num_target_hops]
 
 
-def probe_snapshot_hops(prober, target_hops, naive):
+def probe_hops_in_snapshot(prober, target_hops, naive):
 	prober.reset_all_hops()
 	initial_uncertainty_total = prober.uncertainty_for_hops(target_hops)
 	num_probes = prober.probe_hops(target_hops, naive)
@@ -238,9 +238,9 @@ def experiment_1(num_target_hops, num_runs_per_experiment, max_num_channels, use
 					MIN_CAPACITY_OF_SYNTHETIC_HOPS, MAX_CAPACITY_OF_SYNTHETIC_HOPS)
 			print("Selected" if use_snapshot else "Generated", len(target_hops), "target hops with", num_channels, "channels.")
 			gain_naive_synthetic_value,	speed_naive_synthetic_value 		\
-			= probe_synthetic_hops(target_hops, naive=True)
+			= probe_hops_isolated(target_hops, naive=True)
 			gain_optimal_synthetic_value,	speed_optimal_synthetic_value 	\
-			= probe_synthetic_hops(target_hops, naive=False)
+			= probe_hops_isolated(target_hops, naive=False)
 			diff_gains = abs((gain_naive_synthetic_value-gain_optimal_synthetic_value) / gain_optimal_synthetic_value)
 			max_diff_gains = 0.01
 			if(diff_gains > max_diff_gains):
@@ -251,9 +251,9 @@ def experiment_1(num_target_hops, num_runs_per_experiment, max_num_channels, use
 			speed_list_optimal_synthetic.append(speed_optimal_synthetic_value)
 			if use_snapshot:
 				gain_optimal_naive_snapshot_value,	speed_naive_snapshot_value = \
-				probe_snapshot_hops(prober, target_hops_nodes, naive=True)
+				probe_hops_in_snapshot(prober, target_hops_nodes, naive=True)
 				gain_optimal_optimal_snapshot_value,speed_optimal_snapshot_value = \
-				probe_snapshot_hops(prober, target_hops_nodes, naive=False)
+				probe_hops_in_snapshot(prober, target_hops_nodes, naive=False)
 				#assert(abs((gain_optimal_naive_snapshot_value-gain_optimal_optimal_snapshot_value) / gain_optimal_optimal_snapshot_value) < 0.01)
 				gain_list_naive_snapshot.append(			gain_optimal_naive_snapshot_value)
 				gain_list_optimal_snapshot.append(			gain_optimal_optimal_snapshot_value)
@@ -354,8 +354,8 @@ def experiment_2(num_target_hops, num_runs_per_experiment):
 		return Hop(SMALL_BIG, ENABLED_BOTH, ENABLED_NONE)
 
 	def compare_methods(target_hops):
-		gain_naive, 	speed_naive 	= probe_synthetic_hops(target_hops, naive=True)
-		gain_optimal, 	speed_optimal 	= probe_synthetic_hops(target_hops, naive=False)
+		gain_naive, 	speed_naive 	= probe_hops_isolated(target_hops, naive=True)
+		gain_optimal, 	speed_optimal 	= probe_hops_isolated(target_hops, naive=False)
 		assert(abs((gain_naive-gain_optimal) / gain_optimal) < 0.05), (gain_naive, gain_optimal)
 		return gain_optimal, speed_naive, speed_optimal
 
@@ -436,8 +436,8 @@ def experiment_3(num_target_hops, num_runs_per_experiment, max_ratio):
 		gain_list, speed_list_naive, speed_list_optimal = [], [], []
 		for _ in range(num_runs_per_experiment):
 			target_hops = [Hop(capacities, [0,1], [0,1]) for _ in range(num_target_hops)]
-			gain_naive,		speed_naive 	= probe_synthetic_hops(target_hops, naive=True)
-			gain_optimal,	speed_optimal 	= probe_synthetic_hops(target_hops, naive=False)
+			gain_naive,		speed_naive 	= probe_hops_isolated(target_hops, naive=True)
+			gain_optimal,	speed_optimal 	= probe_hops_isolated(target_hops, naive=False)
 			assert(abs((gain_naive-gain_optimal) / gain_optimal) < 0.05), (gain_naive, gain_optimal)
 			gain_list.append(gain_optimal)
 			speed_list_naive.append(speed_naive)
@@ -480,8 +480,8 @@ def experiment_4(num_target_hops, num_runs_per_experiment):
 	for _ in range(num_runs_per_experiment):
 		target_hops = generate_hops(num_target_hops, NUM_CHANNELS_IN_TARGET_HOPS, 
 					MIN_CAPACITY_OF_SYNTHETIC_HOPS, MAX_CAPACITY_OF_SYNTHETIC_HOPS)
-		gain,	speed 		= probe_synthetic_hops(target_hops, naive=False, jamming=False)
-		gain_j,	speed_j 	= probe_synthetic_hops(target_hops, naive=False, jamming=True)
+		gain,	speed 		= probe_hops_isolated(target_hops, naive=False, jamming=False)
+		gain_j,	speed_j 	= probe_hops_isolated(target_hops, naive=False, jamming=True)
 		gains.append(gain)
 		gains_j.append(gain_j)
 		speeds.append(speed)
@@ -503,7 +503,7 @@ def experiment_4(num_target_hops, num_runs_per_experiment):
 
 
 def main():
-
+	#random.seed(0)
 	parser = argparse.ArgumentParser()
 	parser.add_argument('--num_target_hops', default=100, type=int)
 	parser.add_argument('--num_runs_per_experiment', default=10, type=int)
@@ -515,10 +515,10 @@ def main():
 		print("Too high max_num_channels: snapshot doesn't have that many hops with that many channels.")
 		exit()
 	
-	#experiment_1(args.num_target_hops, args.num_runs_per_experiment, args.max_num_channels, args.use_snapshot)
+	experiment_1(args.num_target_hops, args.num_runs_per_experiment, args.max_num_channels, args.use_snapshot)
 	#experiment_2(args.num_target_hops, args.num_runs_per_experiment)
 	#experiment_3(args.num_target_hops, args.num_runs_per_experiment, max_ratio=10)
-	experiment_4(args.num_target_hops, args.num_runs_per_experiment)
+	#experiment_4(args.num_target_hops, args.num_runs_per_experiment)
 
 	
 

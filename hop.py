@@ -8,6 +8,8 @@ from rectangle import ProbingRectangle
 import random
 from math import log2
 
+dir0 = True
+dir1 = False
 
 class Hop:
 
@@ -31,8 +33,7 @@ class Hop:
 		if self.can_forward_dir1:
 			assert(max(e_dir1) <= self.N)
 		self.capacities = capacities
-		self.e_dir0 = e_dir0
-		self.e_dir1 = e_dir1
+		self.e = {dir0: e_dir0, dir1: e_dir1}
 		if balances:
 			# if balances are provided, check their consistency w.r.t. capacities
 			assert(all(0 <= b <= c for b,c in zip(balances, capacities)))
@@ -41,12 +42,12 @@ class Hop:
 			# for each channel, pick a balance randomly between zero and capacity
 			self.B = [random.randrange(self.capacities[i]) for i in range(self.N)]
 		#print("balances", self.B)
-		self.max_capacity_dir0 = max([c for i,c in enumerate(self.capacities) if i in self.e_dir0]) if self.can_forward_dir0 else 0
-		self.max_capacity_dir1 = max([c for i,c in enumerate(self.capacities) if i in self.e_dir1]) if self.can_forward_dir1 else 0
+		self.max_capacity_dir0 = max([c for i,c in enumerate(self.capacities) if i in self.e[dir0]]) if self.can_forward_dir0 else 0
+		self.max_capacity_dir1 = max([c for i,c in enumerate(self.capacities) if i in self.e[dir1]]) if self.can_forward_dir1 else 0
 		# h is how much a hop can _really_ forward in dir0
-		self.h = max([b for i,b in enumerate(self.B) if i in self.e_dir0]) if self.can_forward_dir0 else 0
+		self.h = max([b for i,b in enumerate(self.B) if i in self.e[dir0]]) if self.can_forward_dir0 else 0
 		# g is how much a hop can _really_ forward in dir1
-		self.g = max([self.capacities[i] - b for i,b in enumerate(self.B) if i in self.e_dir1]) if self.can_forward_dir1 else 0
+		self.g = max([self.capacities[i] - b for i,b in enumerate(self.B) if i in self.e[dir1]]) if self.can_forward_dir1 else 0
 		self.granularity = granularity
 		self.reset()
 
@@ -78,8 +79,8 @@ class Hop:
 		'''
 		self.h_l = -1
 		self.g_l = -1
-		self.max_c_dir_0 = max([c for (i,c) in enumerate(self.capacities) if i in self.e_dir0]) if self.can_forward_dir0 else max(self.capacities)
-		self.max_c_dir_1 = max([c for (i,c) in enumerate(self.capacities) if i in self.e_dir1]) if self.can_forward_dir1 else max(self.capacities)
+		self.max_c_dir_0 = max([c for (i,c) in enumerate(self.capacities) if i in self.e[dir0]]) if self.can_forward_dir0 else max(self.capacities)
+		self.max_c_dir_1 = max([c for (i,c) in enumerate(self.capacities) if i in self.e[dir1]]) if self.can_forward_dir1 else max(self.capacities)
 		self.h_u = self.max_c_dir_0
 		self.g_u = self.max_c_dir_1
 		self.__update_dependent_hop_properties()
@@ -91,8 +92,8 @@ class Hop:
 		s += "  channels: " + str(self.N) + "\n"
 		s += "  capacities: " + str(self.capacities) + "\n"
 		s += "  balances: " + str(self.B) + "\n"
-		s += "  enabled in dir0: " + str(self.e_dir0) + "\n"
-		s += "  enabled in dir1: " + str(self.e_dir1) + "\n"
+		s += "  enabled in dir0: " + str(self.e[dir0]) + "\n"
+		s += "  enabled in dir1: " + str(self.e[dir1]) + "\n"
 		s += "  can forward in dir0: " + str(self.h) + "\n"
 		s += "  can forward in dir1: " + str(self.g) + "\n"
 		def effective_h(h):
@@ -138,7 +139,7 @@ class Hop:
 			- eff_vertex: an N-element vector of coordinates of the effective vertex.
 		'''
 		def effective_bound(bound, ch_i):
-			enabled_channels = self.e_dir0 if is_dir0 else self.e_dir1
+			enabled_channels = self.e[dir0] if is_dir0 else self.e[dir1]
 			# for single-channel hops, h / g bounds are not independent
 			# hence, it is sufficient for channel to be enabled in one direction
 			if (ch_i in enabled_channels or self.N == 1 or bound < 0) and bound <= self.capacities[ch_i]:
@@ -279,43 +280,52 @@ class Hop:
 		return a
 
 
-	def next_dir(self):
-		if not (self.can_forward_dir0 or self.can_forward_dir1):
-			print("Hop disabled in both directions:", self)
-			return None
-		if self.can_forward_dir0 != self.can_forward_dir1:
-			if not self.can_forward_dir0:
-				chosen_dir0 = False
-			if not self.can_forward_dir1:
-				chosen_dir0 = True
-		else:
-			diff_dir0 = self.h_u - self.h_l
-			diff_dir1 = self.g_u - self.g_l
-			chosen_dir0 = diff_dir0 >= diff_dir1
-			#chosen_dir0 = random.random() < 0.5
-		return chosen_dir0
+	def diff(self, is_dir0):
+		return self.h_u - self.h_l if is_dir0 else self.g_u - self.g_l
 
 
 	def fully_probed_dir(self, is_dir0):
-		if is_dir0:
-			return self.h_u - self.h_l == 1
-		else:
-			return self.g_u - self.g_l == 1
+		return self.diff(is_dir0) == 1
 
 
 	def fully_probed(self):
-		return self.fully_probed_dir(True) and self.fully_probed_dir(False)
+		return self.fully_probed_dir(dir0) and self.fully_probed_dir(dir1)
 
 
 	def worth_probing_dir(self, is_dir0):
 		if is_dir0:
-			return self.can_forward_dir0 and not self.fully_probed_dir(True)
+			return self.can_forward_dir0 and not self.fully_probed_dir(dir0)
 		else:
-			return self.can_forward_dir1 and not self.fully_probed_dir(False)
+			return self.can_forward_dir1 and not self.fully_probed_dir(dir1)
 
 
 	def worth_probing(self):
-		return self.worth_probing_dir(True) or self.worth_probing_dir(False)
+		return self.worth_probing_dir(dir0) or self.worth_probing_dir(dir1)
+
+
+	def next_dir(self):
+		if not (self.worth_probing_dir(dir0) or self.worth_probing_dir(dir1)):
+			print("Hop disabled in both directions:", self)
+			return None
+		if not self.worth_probing_dir(dir0):
+			chosen_dir0 = False
+		elif not self.worth_probing_dir(dir1):
+			chosen_dir0 = True
+		else:
+			# choose amount that cuts F in half more precisely
+			# if both cut well, choose smaller amount
+			S_F_half = max(1, self.S_F // 2)
+			a_dir0 = self.next_a(dir0, naive=False)
+			S_F_a_dir0 = self.S_F_a_expected(dir0, a_dir0)
+			diff_a_dir0 = abs(S_F_a_dir0 - S_F_half) / S_F_half
+			a_dir1 = self.next_a(dir1, naive=False)
+			S_F_a_dir1 = self.S_F_a_expected(dir1, a_dir1)
+			diff_a_dir1 = abs(S_F_a_dir1 - S_F_half) / S_F_half
+			if diff_a_dir0 > 0.01 or diff_a_dir1 > 0.01:
+				chosen_dir0 = diff_a_dir0 < diff_a_dir1
+			else:
+				chosen_dir0 = self.diff(dir0) < self.diff(dir1)
+		return chosen_dir0
 
 
 	def probe(self, is_dir0, amount):
@@ -376,8 +386,8 @@ class Hop:
 		assert(channel_index < self.N)
 		return Hop(
 			capacities = [self.capacities[channel_index]],
-			e_dir0 = [0] if channel_index in self.e_dir0 else [],
-			e_dir1 = [0] if channel_index in self.e_dir1 else [],
+			e_dir0 = [0] if channel_index in self.e[dir0] else [],
+			e_dir1 = [0] if channel_index in self.e[dir1] else [],
 			balances = [self.B[channel_index]])
 
 
@@ -387,9 +397,9 @@ class Hop:
 		guessed = self.B[channel_index] == balance
 		# updating the estimates : will partially speed up the jamming-enhanced probing
 		# can only update lower bounds
-		if channel_index in self.e_dir0:
+		if channel_index in self.e[dir0]:
 			self.h_l = max(balance - 1, self.h_l)
-		if channel_index in self.e_dir1:
+		if channel_index in self.e[dir1]:
 			balance_dir1 = self.capacities[channel_index] - balance
 			self.g_l = max(balance_dir1 - 1, self.g_l)
 		self.__update_dependent_hop_properties()
@@ -399,10 +409,10 @@ class Hop:
 
 	'''
 	def jam(self, channel_index):
-		if channel_index in self.e_dir0:
-			self.e_dir0.remove(channel_index)
-		if channel_index in self.e_dir1:
-			self.e_dir1.remove(channel_index)
+		if channel_index in self.e[dir0]:
+			self.e[dir0].remove(channel_index)
+		if channel_index in self.e[dir1]:
+			self.e[dir1].remove(channel_index)
 	
 	def jam_all_except(self, channel_index):
 		assert(channel_index < self.N)
@@ -411,10 +421,10 @@ class Hop:
 				self.jam(n)
 
 	def unjam(self, channel_index):
-		if channel_index not in self.e_dir0:
-			self.e_dir0.append(channel_index)
-		if channel_index not in self.e_dir1:
-			self.e_dir1.append(channel_index)
+		if channel_index not in self.e[dir0]:
+			self.e[dir0].append(channel_index)
+		if channel_index not in self.e[dir1]:
+			self.e[dir1].append(channel_index)
 
 	def unjam_all(self):
 		for n in range(self.N):

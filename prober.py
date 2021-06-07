@@ -3,10 +3,11 @@
 # Copyright (c) University of Luxembourg 2020-2021.
 # Developed by Sergei Tikhomirov (sergey.s.tikhomirov@gmail.com), SnT Cryptolux group.
 
-from hop import Hop
+from hop import Hop, dir0, dir1
 from graph import create_multigraph_from_snapshot, ln_multigraph_to_hop_graph
 
 import networkx as nx
+import random
 
 
 class Prober:
@@ -65,10 +66,10 @@ class Prober:
 		if self.lnhopgraph.has_edge(first, second):
 			hop = self.lnhopgraph[first][second]["hop"]
 			#print("Old hop:", hop)
-			capacities = hop["capacities"].append(capacity)
-			e_dir0 = hop["e_dir0"].append(is_dir0)
-			e_dir1 = hop["e_dir1"].append(not is_dir0)
-			balances = hop["balances"].append(balance_at_first)
+			capacities = hop.capacities.append(capacity)
+			e_dir0 = hop.e[dir0].append(is_dir0)
+			e_dir1 = hop.e[dir0].append(not is_dir0)
+			balances = hop.balances.append(balance_at_first)
 			updated_hop = Hop(capacities, e_dir0, e_dir1, balances)
 			#print("Updated hop:", updated_hop)
 			self.lnhopgraph[first][second]["hop"] = updated_hop
@@ -171,101 +172,64 @@ class Prober:
 		return reached_target
 
 
-	def probe_hop(self, target_hop, naive, max_failed_probes_per_hop=20):
-		hop = self.lnhopgraph[target_hop[0]][target_hop[1]]["hop"]
-		num_probes_total = 0
-		if not (hop.can_forward_dir0 or hop.can_forward_dir1):
-			return 0
-		known_failed_amount_dir0 = None
-		known_failed_amount_dir1 = None
-		while hop.worth_probing():
-			best_dir_is_dir0 = hop.next_dir()
-			#print("Directions: preferred:", best_dir_is_dir0, "alternative:", alt_dir_is_dir0)
-			def hop_in_order(hop, is_dir0):
-				hop_is_dir0 = hop[0] < hop[1]
-				return hop if hop_is_dir0 == is_dir0 else reversed(hop)
+	def probe_hop(self, target_node_pair, naive, max_failed_probes_per_hop=20, best_dir_chance=0.75):
+		target_hop = self.lnhopgraph[target_node_pair[0]][target_node_pair[1]]["hop"]
+		known_failed = {dir0: None, dir1: None}
+		print("\n\n----------------------\nProbing hop", target_node_pair)
+		def probe_hop_in_direction(target_node_pair, is_dir0):
 			reached_target = False
-			num_probes = 0
-			while not reached_target:
-				if hop.worth_probing_dir(best_dir_is_dir0):
-					amount = hop.next_a(best_dir_is_dir0, naive)
-					known_failed = known_failed_amount_dir0 if best_dir_is_dir0 else known_failed_amount_dir1
-					if known_failed is not None:
-						amount = min(amount, known_failed)
-					if best_dir_is_dir0 and known_failed_amount_dir0 is not None and amount > known_failed_amount_dir0:
-						return num_probes
-					if not best_dir_is_dir0 and known_failed_amount_dir1 is not None and amount > known_failed_amount_dir1:
-						return num_probes
-					target_hop_in_order = hop_in_order(target_hop, best_dir_is_dir0)
-					paths = self.paths_for_amount(target_hop_in_order, amount)
+			if target_hop.worth_probing_dir(is_dir0):
+				amount = target_hop.next_a(is_dir0, naive)
+				if (amount < known_failed[is_dir0] if known_failed[is_dir0] is not None else True):
+					hop_is_dir0 = target_node_pair[0] < target_node_pair[1]
+					target_node_pair_in_order = target_node_pair if hop_is_dir0 == is_dir0 else reversed(target_node_pair)
+					paths = self.paths_for_amount(target_node_pair_in_order, amount)
 					try:
+						#print("Trying next path for direction", "dir0" if is_dir0 else "dir1", ", amount:", amount)
 						path = next(paths)
 						reached_target = self.issue_probe_along_path(path, amount)
-						num_probes += 1
 					except StopIteration:
-						#print("Path iteration stopped for preferred direction, amount:", amount)
-						if best_dir_is_dir0:
-							known_failed_amount_dir0 = amount
-						else:
-							known_failed_amount_dir1 = amount
-						break
-					# allocate 3/4 of probe attempts to preferred direction
-					if num_probes > int(0.75 * max_failed_probes_per_hop):
-						#print("Cannot reach target after", num_probes, "probes in preferred direction")
-						break
+						#print("Path iteration stopped for direction", "dir0" if is_dir0 else "dir1", ", amount:", amount)
+						known_failed[is_dir0] = amount
 				else:
-					#print("Not worth probing")
+					#print("Will not probe: we know optimal amount will fail")
 					pass
-			if not reached_target:
-				#print("Probing in another direction")
-				alt_dir_is_dir0 = not best_dir_is_dir0
-				if hop.worth_probing_dir(alt_dir_is_dir0):
-					amount_alt = hop.next_a(alt_dir_is_dir0, naive)
-					known_failed = known_failed_amount_dir0 if alt_dir_is_dir0 else known_failed_amount_dir1
-					if known_failed is not None:
-						amount_alt = min(amount_alt, known_failed)
-					if alt_dir_is_dir0 and known_failed_amount_dir0 is not None and amount_alt > known_failed_amount_dir0:
-						return num_probes
-					if not alt_dir_is_dir0 and known_failed_amount_dir1 is not None and amount_alt > known_failed_amount_dir1:
-						return num_probes
-					target_hop_in_order_alt = hop_in_order(target_hop, alt_dir_is_dir0)
-					paths_alt = self.paths_for_amount(target_hop_in_order_alt, amount_alt)
-					while not reached_target:
-						#print("trying alternative direction...")
-						try:
-							path_alt = next(paths_alt)
-							reached_target = self.issue_probe_along_path(path_alt, amount_alt)
-							num_probes += 1
-						except StopIteration:
-							#print("Path iteration stopped for alternative direction, amount:", amount_alt)
-							if best_dir_is_dir0:
-								known_failed_amount_dir0 = amount_alt
-							else:
-								known_failed_amount_dir1 = amount_alt
-							break				
-						if num_probes > max_failed_probes_per_hop:
-							#print("Cannot reach target after", num_probes, "probes in both directions")
-							break
+			else:
+				#print("Not worth probing")
+				pass
+			return reached_target
+		num_probes = 0
+		while target_hop.worth_probing():
+			best_dir = target_hop.next_dir()
+			#print("\nNext probe")
+			#print("Preferred direction:", "dir0" if best_dir else "dir1")
+			reached_target = False
+			attempts = 0
+			while not reached_target and attempts < max_failed_probes_per_hop:
+				# do the first attempt in the preferred direction
+				if attempts == 0:
+					direction = best_dir
 				else:
-					#print("Not worth probing")
-					pass
+					direction = best_dir if random.random() < best_dir_chance else not best_dir
+				reached_target = probe_hop_in_direction(target_node_pair, direction)
+				attempts += 1
+			num_probes += attempts
 			if not reached_target:
 				print("Cannot reach target hop after", num_probes, "probes")
-				#print(target_hop)
-				#print(self.lnhopgraph[target_hop[0]][target_hop[1]]["hop"])
-				#print("Current bounds:", hop.h_u, "-", hop.h_l, hop.g_u, "-", hop.g_l)
-			num_probes_total += num_probes
-			if not reached_target:
+				print(target_node_pair)
+				print(target_hop)
+				#print("Current bounds:", target_hop.h_u, "-", target_hop.h_l, target_hop.g_u, "-", target_hop.g_l)
+				#if target_hop.worth_probing_dir(dir0) or target_hop.worth_probing_dir(dir1):
+				#	print("Hop not fully probed yet!")
 				break
-		return num_probes_total
+			else:
+				#print("Probed successfully.")
+				pass
+		return num_probes
 
 
 	def probe_hops(self, target_hops, naive):
-		total_steps = 0
-		for target_hop in target_hops:
-			#print("\n***\nProbing target hop", target_hop)
-			total_steps += self.probe_hop(target_hop, naive)
-		return total_steps
+		return sum([self.probe_hop(target_hop, naive) for target_hop in target_hops])
 
 
 	def reset_all_hops(self):
