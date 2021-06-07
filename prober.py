@@ -172,12 +172,13 @@ class Prober:
 		return reached_target
 
 
-	def probe_hop(self, target_node_pair, naive, max_failed_probes_per_hop=20, best_dir_chance=0.75):
+	def probe_hop(self, target_node_pair, naive, max_failed_probes_per_hop=20, best_dir_chance=0.5):
 		target_hop = self.lnhopgraph[target_node_pair[0]][target_node_pair[1]]["hop"]
 		known_failed = {dir0: None, dir1: None}
 		print("\n\n----------------------\nProbing hop", target_node_pair)
 		def probe_hop_in_direction(target_node_pair, is_dir0):
-			reached_target = False
+			print("Probing in direction", "dir0" if is_dir0 else "dir1")
+			made_probe, reached_target = False, False
 			if target_hop.worth_probing_dir(is_dir0):
 				amount = target_hop.next_a(is_dir0, naive)
 				if (amount < known_failed[is_dir0] if known_failed[is_dir0] is not None else True):
@@ -185,35 +186,62 @@ class Prober:
 					target_node_pair_in_order = target_node_pair if hop_is_dir0 == is_dir0 else reversed(target_node_pair)
 					paths = self.paths_for_amount(target_node_pair_in_order, amount)
 					try:
-						#print("Trying next path for direction", "dir0" if is_dir0 else "dir1", ", amount:", amount)
+						print("Trying next path for direction", "dir0" if is_dir0 else "dir1", ", amount:", amount)
 						path = next(paths)
 						reached_target = self.issue_probe_along_path(path, amount)
+						made_probe = True
 					except StopIteration:
-						#print("Path iteration stopped for direction", "dir0" if is_dir0 else "dir1", ", amount:", amount)
+						print("Path iteration stopped for direction", "dir0" if is_dir0 else "dir1", ", amount:", amount)
 						known_failed[is_dir0] = amount
 				else:
-					#print("Will not probe: we know optimal amount will fail")
+					print("Will not probe: we know optimal amount will fail")
 					pass
 			else:
-				#print("Not worth probing")
+				print("Not worth probing")
 				pass
-			return reached_target
+			return made_probe, reached_target
 		num_probes = 0
 		while target_hop.worth_probing():
 			best_dir = target_hop.next_dir(naive)
-			#print("\nNext probe")
-			#print("Preferred direction:", "dir0" if best_dir else "dir1")
-			reached_target = False
-			attempts = 0
-			while not reached_target and attempts < max_failed_probes_per_hop:
+			alt_dir = not best_dir if target_hop.worth_probing_dir(not best_dir) else None
+			print("\nNext probe")
+			print("Preferred direction:", "dir0" if best_dir else "dir1")
+			made_probe, reached_target = False, False
+			did_probes, first_attempt = 0, True
+			while not reached_target and did_probes < max_failed_probes_per_hop:
 				# do the first attempt in the preferred direction
-				if attempts == 0:
+				if first_attempt:
 					direction = best_dir
+					first_attempt = False
 				else:
-					direction = best_dir if random.random() < best_dir_chance else not best_dir
-				reached_target = probe_hop_in_direction(target_node_pair, direction)
-				attempts += 1
-			num_probes += attempts
+					if alt_dir is None:
+						# only one direction available
+						if not made_probe:
+							# we tried the only direction and didn't make a probe
+							# (no paths or amount known to fail)
+							# we can't do anything else
+							break
+						else:
+							# trying the only direction once more
+							direction = best_dir
+					else:
+						# alternative direction available
+						if not made_probe:
+							# didn't make a probe in this direction - try another
+							if direction == best_dir:
+								direction = alt_dir
+							else:
+								# we must have tried best direction earlier
+								# if alt_dir also failed, we must stop
+								break
+						else:
+							# can probe in either of two directions
+							# choose with coin flip biased in favor of best direction
+							direction = best_dir if random.random() < best_dir_chance else alt_dir
+				made_probe, reached_target = probe_hop_in_direction(target_node_pair, direction)
+				if made_probe:
+					did_probes += 1
+			num_probes += did_probes
 			if not reached_target:
 				print("Cannot reach target hop after", num_probes, "probes")
 				print(target_node_pair)
@@ -223,7 +251,7 @@ class Prober:
 				#	print("Hop not fully probed yet!")
 				break
 			else:
-				#print("Probed successfully.")
+				print("Probed successfully.")
 				pass
 		return num_probes
 
