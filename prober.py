@@ -200,7 +200,7 @@ class Prober:
 			return reached_target
 		num_probes = 0
 		while target_hop.worth_probing():
-			best_dir = target_hop.next_dir()
+			best_dir = target_hop.next_dir(naive)
 			#print("\nNext probe")
 			#print("Preferred direction:", "dir0" if best_dir else "dir1")
 			reached_target = False

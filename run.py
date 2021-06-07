@@ -79,7 +79,7 @@ def probe_single_hop_without_jamming(hop, naive):
 	assert(initial_uncertainty > 0), str(initial_uncertainty) + "\n" + str(hop)
 	num_probes = 0
 	while hop.worth_probing():
-		chosen_dir0 = hop.next_dir()
+		chosen_dir0 = hop.next_dir(naive)
 		if chosen_dir0 is None:
 			print("Hop is disabled in both directions, cannot probe")
 			break
