@@ -303,7 +303,7 @@ class Hop:
 		return self.worth_probing_dir(dir0) or self.worth_probing_dir(dir1)
 
 
-	def next_dir(self, naive):
+	def next_dir(self, naive, prefer_small_amounts=False, threshold_area_difference=0.1):
 		if not (self.worth_probing_dir(dir0) or self.worth_probing_dir(dir1)):
 			print("Hop disabled in both directions:", self)
 			return None
@@ -312,10 +312,21 @@ class Hop:
 		elif not self.worth_probing_dir(dir1):
 			chosen_dir0 = True
 		else:
-			# choose smaller amount: more likely to pass
 			a_dir0 = self.next_a(dir0, naive)
 			a_dir1 = self.next_a(dir1, naive)
-			chosen_dir0 = a_dir0 < a_dir1
+			if naive or prefer_small_amounts:
+				# choose smaller amount: more likely to pass
+				chosen_dir0 = a_dir0 < a_dir1
+			else:
+				# prefer amount that splits in half better
+				S_F_half = max(1, self.S_F // 2)
+				S_F_a_dir0 = self.S_F_a_expected(dir0, a_dir0)
+				S_F_a_dir1 = self.S_F_a_expected(dir1, a_dir1)
+				if abs(S_F_a_dir0 - S_F_a_dir1) / S_F_half < threshold_area_difference:
+					chosen_dir0 = a_dir0 < a_dir1
+				else:
+					# if the two areas
+					chosen_dir0 = abs(S_F_a_dir0 - S_F_half) < abs(S_F_a_dir1 - S_F_half)
 		return chosen_dir0
 
 
