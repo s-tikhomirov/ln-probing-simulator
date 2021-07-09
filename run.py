@@ -8,50 +8,13 @@
 '''
 
 from prober import Prober
-from hop import Hop
+from hop import Hop, generate_hop, dir0, dir1
 from plot import plot
 
 import random
 import argparse
 import statistics
 import time
-
-
-def generate_hop(min_N, max_N, min_capacity, max_capacity, probability_bidirectional, balances=None):
-	'''
-		Generate a random hop.
-
-		Parameters:
-		- min_N: minimum number of channels
-		- max_N: maximum number of channels
-		- min_capacity: minimum capacity of one channel
-		- max_capacity: maximum capacity of one channel
-		- probability_bidirectional: probability that a channel is enabled in both directions
-		- balances: channel balances (generated randomly if None)
-
-		Return:
-		- a Hop instance
-	'''
-	N = random.randint(min_N, max_N)
-	capacities = [random.randint(min_capacity, max_capacity) for _ in range(N)]
-	# avoid generating hops disabled in both directions (we can't probe them anyway)
-	hop_enabled_in_one_direction = False
-	while not hop_enabled_in_one_direction:
-		enabled_dir0 = []
-		enabled_dir1 = []
-		for i in range(N):
-			is_bidirectional = random.random() < probability_bidirectional
-			if is_bidirectional:
-				enabled_dir0.append(i)
-				enabled_dir1.append(i)
-			else:
-				if random.random() < probability_bidirectional:
-					enabled_dir0.append(i)
-				else:
-					enabled_dir0.append(i)
-		hop_enabled_in_one_direction = enabled_dir0 or enabled_dir0
-	#print("Generating hop: capacities", capacities, "enabled_dir0", enabled_dir0, "enabled_dir1", enabled_dir1)
-	return Hop(capacities, enabled_dir0, enabled_dir1, balances)
 
 
 def generate_hops(num_target_hops, N, min_capacity, max_capacity, probability_bidirectional=1, all_max=True):
@@ -71,7 +34,7 @@ def generate_hops(num_target_hops, N, min_capacity, max_capacity, probability_bi
 	return [generate_hop(N, N, min_capacity, max_capacity, probability_bidirectional) for _ in range(num_target_hops)]
 
 
-def probe_single_hop_without_jamming(hop, naive):
+def probe_single_hop(hop, naive):
 	'''
 		Do a series of probes until the hop is fully probed.
 	'''
@@ -91,15 +54,15 @@ def probe_single_hop_without_jamming(hop, naive):
 	# return gain in bits and used number of probes
 	return gain, num_probes
 
-
-def probe_single_hop_with_jamming(hop, naive):
+'''
+def probe_single_hop_with_jamming_extracted(hop, naive):
 	# probe channels one by one by jamming everything else
 	gain, num_probes = 0, 0
 	initial_uncertainty = hop.uncertainty
 	final_uncertainty = 0
 	for n in range(hop.N):
 		hop_n = hop.extract_channel_as_hop(n)
-		_, num_probes_ = probe_single_hop_without_jamming(hop_n, naive)
+		_, num_probes_ = probe_single_hop(hop_n, naive)
 		balance_guessed = hop.guess_true_balance(hop_n.B[0], n)
 		if not balance_guessed:
 			print("Wrongly guessed balance for channel", n, "stopping.")
@@ -108,26 +71,18 @@ def probe_single_hop_with_jamming(hop, naive):
 	final_uncertainty = 0 	# we have guessed all balances!
 	gain = initial_uncertainty - final_uncertainty
 	return gain, num_probes
-
-
-def probe_single_hop(hop, naive, jamming=False):
-	if jamming:
-		gain, num_probes = probe_single_hop_with_jamming(hop, naive)
-	else:
-		gain, num_probes = probe_single_hop_without_jamming(hop, naive)
-	return gain, num_probes
-
+'''
 
 def probe_hops_isolated(hops, naive, jamming=False):
 	'''
 		Probe each hop from a list of hops.
 	'''
 	for hop in hops:
-		hop.reset()
+		hop.reset_estimates()
 	initial_uncertainty_total = sum([hop.uncertainty for hop in hops])
 	gains, probes_list = [], []
 	for hop in hops:
-		gain, probes = probe_single_hop(hop, naive=naive, jamming=jamming)
+		gain, probes = probe_single_hop(hop, naive=naive)
 		gains.append(gain)
 		probes_list.append(probes)
 	#print("\nProbed with method:", "naive" if naive else "optimal", "with jamming" if jamming else "without jamming")
@@ -176,7 +131,7 @@ def generate_prober():
 def choose_target_hops_with_n_channels(lnhopgraph, max_num_target_hops, num_channels):
 	# we only choose targets that are enabled in at least one directions
 	potential_target_hops = [(u,v) for u,v,e in lnhopgraph.edges(data=True) if (
-		e["hop"].N == num_channels and (e["hop"].can_forward_dir0 or e["hop"].can_forward_dir1))]
+		e["hop"].N == num_channels and (e["hop"].can_forward(dir0) or e["hop"].can_forward(dir1)))]
 	random.shuffle(potential_target_hops)
 	return potential_target_hops[:max_num_target_hops]
 

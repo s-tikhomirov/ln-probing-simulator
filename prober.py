@@ -30,7 +30,7 @@ class Prober:
 		'''
 		def directed_edge_can_forward(u, v):
 			hop = self.lnhopgraph[u][v]["hop"]
-			return hop.can_forward_dir0 if u < v else hop.can_forward_dir1
+			return hop.can_forward(dir0) if u < v else hop.can_forward(dir1)
 
 		edges_to_remove = [(u,v) for u,v in self.local_routing_graph.edges() if not directed_edge_can_forward(u,v) ]
 		print("Total edges in routing graph:", len(self.local_routing_graph.edges()))
@@ -97,9 +97,9 @@ class Prober:
 			hop = self.lnhopgraph[n1][n2]["hop"]
 			is_dir0 = n1 < n2
 			if is_dir0:
-				return hop.can_forward_dir0 and amount < hop.h_u
+				return hop.can_forward(dir0) and amount < hop.h_u
 			else:
-				return hop.can_forward_dir1 and amount < hop.g_u
+				return hop.can_forward(dir1) and amount < hop.g_u
 
 		def filter_node(n):
 			'''
@@ -262,4 +262,4 @@ class Prober:
 
 	def reset_all_hops(self):
 		for n1,n2 in self.lnhopgraph.edges():
-			self.lnhopgraph[n1][n2]["hop"].reset()
+			self.lnhopgraph[n1][n2]["hop"].reset_estimates()
