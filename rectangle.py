@@ -63,32 +63,34 @@ class Rectangle():
 	def intersect_with(self, other_rectangle):
 		'''
 			Intersect self with another rectangle.
-			An intersection of two rectangles is a rectangles.
-			We assume that one of the rectangles is "lower-left" and the other is "upper-right".
+			An intersection of two rectangles is a rectangle.
 
 			Parameters:
 			- other_rectangle: the other rectangle
 
 			Return:
 			- the intersection Rectangle or EmptyRectangle if the intersection is empty
+
 		'''
-		our_l_inside_them = other_rectangle.contains_point(self.l_vertex)
-		our_u_inside_them = other_rectangle.contains_point(self.u_vertex)
-		their_l_inside_us = self.contains_point(other_rectangle.l_vertex)
-		their_u_inside_us = self.contains_point(other_rectangle.u_vertex)
-		if our_l_inside_them and our_u_inside_them:
-			result = self
-		elif their_l_inside_us and their_u_inside_us:
-			result = other_rectangle
-		elif our_u_inside_them:
-			# we are "lower", they are "upper"
-			result = Rectangle(other_rectangle.l_vertex, self.u_vertex)
-		elif our_l_inside_them:
-			# they are "lower", we are "upper"
-			result = Rectangle(self.l_vertex, other_rectangle.u_vertex)
-		else:
-			result = EmptyRectangle()
-		return result
+		if not (self.non_empty and other_rectangle.non_empty):
+			# anything intersected with empty figure is empty
+			return EmptyRectangle()
+		assert(len(self.l_vertex) == len(other_rectangle.l_vertex))
+		N = len(self.l_vertex)
+		intersection_l_vertex = [None] * N
+		intersection_u_vertex = [None] * N
+		# iterate through all dimensions
+		for i in range(N):
+			if (self.l_vertex[i] > other_rectangle.u_vertex[i] or 
+				self.u_vertex[i] < other_rectangle.l_vertex[i]):
+				# no intersection along one dimension => intersection is empty
+				return EmptyRectangle()
+			else:
+				# otherwise, l is max of l's, u is min of u's
+				intersection_l_vertex[i] = max(self.l_vertex[i], other_rectangle.l_vertex[i])
+				intersection_u_vertex[i] = min(self.u_vertex[i], other_rectangle.u_vertex[i])
+		return Rectangle(intersection_l_vertex, intersection_u_vertex)
+
 
 
 class ProbingRectangle(Rectangle):
