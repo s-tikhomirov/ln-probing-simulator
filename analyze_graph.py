@@ -25,16 +25,18 @@ def n_channel_hops(all_hops, min_N, max_N):
 def share_n_channel_hops(all_hops, min_N, max_N):
 	return len(n_channel_hops(all_hops, min_N, max_N)) / len(all_hops)
 
+def capacity(hop):
+	return sum(hop.capacities)
 
 channels_in_hops = [hop.N for hop in all_hops]
-capacity_in_hops = [hop.capacity() for hop in all_hops]
+capacity_in_hops = [capacity(hop) for hop in all_hops]
 capacity_in_hops_btc = [c / 100000000 for c in capacity_in_hops]
-total_capacity = sum([hop.capacity() for hop in all_hops])
+total_capacity = sum([capacity(hop) for hop in all_hops])
 #share_capacity_in_hops = [c / total_capacity for c in capacity_in_hops]
 
 def share_total_capacity_in_n_hops(all_hops, min_N, max_N, total_capacity):
 	hops = n_channel_hops(all_hops, min_N, max_N)
-	return sum([hop.capacity() for hop in hops]) / total_capacity
+	return sum([capacity(hop) for hop in hops]) / total_capacity
 
 print("Maximal number of channels in a hop:", max(channels_in_hops))
 print("Share of 1-channel hops:", 		share_n_channel_hops(all_hops, 1, 1))
