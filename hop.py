@@ -3,10 +3,12 @@
 # Copyright (c) University of Luxembourg 2020-2021.
 # Developed by Sergei Tikhomirov (sergey.s.tikhomirov@gmail.com), SnT Cryptolux group.
 
-from rectangle import ProbingRectangle
+
+from rectangle import ProbingRectangle, Rectangle
 
 import random
 from math import log2
+
 
 dir0 = True
 dir1 = False
@@ -45,42 +47,61 @@ class Hop:
 		# g is how much a hop can _really_ forward in dir1
 		self.g = max([self.capacities[i] - b for i,b in enumerate(self.B) if i in self.e[dir1]]) if self.can_forward(dir1) else 0
 		self.granularity = granularity
+		self.uncertainty = None 	# will be set later
 		self.reset_estimates()
 
 
 	def can_forward(self, direction):
-		return len(set(self.e[direction]) - set(self.j[direction])) > 0
+		# there is at least one channel enabled and not jammed in this direction
+		return not all(i in self.j[direction] for i in self.e[direction])
 
 
 	def jam(self, channel_index, direction):
-		print("jamming", channel_index)
+		num_jams = 0
 		if channel_index not in self.j[direction]:
+			#print("jamming channel", channel_index, "in direction", "dir0" if direction else "dir1")
 			self.j[direction].append(channel_index)
-			print("jammed")
-		else:
-			print("already jammed")
+			num_jams += 1
+		return num_jams
 
-	def jam_all_except(self, channel_index, direction):
+	def jam_all_except_in_direction(self, channel_index, direction):
+		num_jams = 0
 		for i in self.e[direction]:
 			if i != channel_index:
-				self.jam(i, direction)
+				num_jams += self.jam(i, direction)
+		return num_jams
 
 	def unjam(self, channel_index, direction):
-		print("unjamming", channel_index)
 		if channel_index in self.j[direction]:
+			#print("unjamming channel", channel_index, "in direction", "dir0" if direction else "dir1")
 			self.j[direction].remove(channel_index)
-			print("unjammed")
-		else:
-			print("already unjammed")
 
-	def unjam_all_except(self, channel_index, direction):
+	def unjam_all_in_direction(self, direction):
 		for i in self.e[direction]:
-			if i != channel_index:
-				self.unjam(i, direction)
+			self.unjam(i, direction)
+
+	def unjam_all(self):
+		self.unjam_all_in_direction(dir0)
+		self.unjam_all_in_direction(dir1)
 
 
-	def capacity(self):
-		return sum(self.capacities)
+	def get_corner_points(self):
+		# can similarly get all points, but it's very slow
+		R_b = Rectangle([b_l_i + 1 for b_l_i in self.b_l], self.b_u)
+		R_u_u = self.R_h_u.intersect_with(self.R_g_u).intersect_with(R_b)
+		R_u_l = self.R_h_u.intersect_with(self.R_g_l).intersect_with(R_b)
+		R_l_u = self.R_h_l.intersect_with(self.R_g_u).intersect_with(R_b)
+		ranges = [[R_u_u.l_vertex[i], R_u_u.u_vertex[i]] for i in range(len(R_u_u.l_vertex))]
+		points = []
+		points_left = self.S_F
+		from itertools import product
+		for p in product(*ranges):
+			if not R_u_l.contains_point(p) and not R_l_u.contains_point(p):
+				points.append(p)
+				points_left -= 1
+			if points_left == 0:
+				break
+		return points
 
 
 	def __update_dependent_hop_properties(self):
@@ -93,6 +114,7 @@ class Hop:
 		self.R_h_u = ProbingRectangle(self, is_dir0 = True,  bound = self.h_u)
 		self.R_g_l = ProbingRectangle(self, is_dir0 = False, bound = self.g_l)
 		self.R_g_u = ProbingRectangle(self, is_dir0 = False, bound = self.g_u)
+		self.R_b   = Rectangle([b_l_i + 1 for b_l_i in self.b_l], self.b_u)
 		self.S_F = self.__S_F()
 		self.uncertainty = max(0, log2(self.S_F) - log2(self.granularity))
 		assert(self.h_l < self.h <= self.h_u), (self.h_l, self.h, self.h_u)
@@ -106,6 +128,7 @@ class Hop:
 		'''
 		self.h_l = -1
 		self.g_l = -1
+		# FIXME: clarify the semantics here!
 		self.max_c_dir_0 = max([c for (i,c) in enumerate(self.capacities) if i in self.e[dir0]]) if self.can_forward(dir0) else max(self.capacities)
 		self.max_c_dir_1 = max([c for (i,c) in enumerate(self.capacities) if i in self.e[dir1]]) if self.can_forward(dir1) else max(self.capacities)
 		self.h_u = self.max_c_dir_0
@@ -125,27 +148,26 @@ class Hop:
 		s += "  enabled in dir1: " + str(self.e[dir1]) + "\n"
 		s += "  jammed in dir0: " + str(self.j[dir0]) + "\n"
 		s += "  jammed in dir1: " + str(self.j[dir1]) + "\n"
-		s += "  can forward in dir0: " + str(self.h) + "\n"
-		s += "  can forward in dir1: " + str(self.g) + "\n"
+		s += "  h if unjammed: " + str(self.h) + "\n"
+		s += "  g if unjammed: " + str(self.g) + "\n"
 		def effective_h(h):
 			return h if self.can_forward(dir0) else 0
 		def effective_g(g):
 			return g if self.can_forward(dir1) else 0
-		s += "Can forward in dir0 (estimate):\n"
+		s += "Can forward in dir0 (effective h):\n"
 		s += "  " + str(effective_h(self.h_l + 1)) + " -- " + str(effective_h(self.h_u)) + "\n"
-		s += "Can forward in dir1 (estimate):\n"
+		s += "Can forward in dir1 (effective g):\n"
 		s += "  " + str(effective_g(self.g_l + 1)) + " -- " + str(effective_g(self.g_u)) + "\n"
 		s += "Balance estimates:\n"
-		s += "  \n".join([str(self.b_l[i]) + " -- " + str(self.b_u[i]) for i in range(len(self.b_l))]) + "\n"
+		s += "  \n".join(["  " + str(self.b_l[i] + 1) + " -- " + str(self.b_u[i]) for i in range(len(self.b_l))]) + "\n"
 		s += "Uncertainty: " + str(self.uncertainty) + "\n"
 		return s
 
 
 	def __assert_hop_correct(self):
-		assert(-1 <= self.h_l <= self.h_u <= self.max_c_dir_0)
-		assert(-1 <= self.g_l <= self.g_u <= self.max_c_dir_1)
-		assert(all(-1 <= self.b_l[i] <= self.b_u[i] <= max(self.capacities) for i in range(len(self.b_l)))), str(self)
-
+		assert(-1 <= self.h_l <= self.h_u <= self.max_c_dir_0), self
+		assert(-1 <= self.g_l <= self.g_u <= self.max_c_dir_1), self
+		assert(all(-1 <= self.b_l[i] <= self.b_u[i] <= self.capacities[i] for i in range(len(self.capacities)))), self
 	
 
 	def effective_vertex(self, is_dir0, bound):
@@ -175,6 +197,8 @@ class Hop:
 		'''
 		def effective_bound(bound, ch_i):
 			enabled_channels = self.e[dir0] if is_dir0 else self.e[dir1]
+			# sic! intentionally not accounting for jamming here
+			# h and g are "permanent" hop properties, assuming all channels unjammed
 			# for single-channel hops, h / g bounds are not independent
 			# hence, it is sufficient for channel to be enabled in one direction
 			if (ch_i in enabled_channels or self.N == 1 or bound < 0) and bound <= self.capacities[ch_i]:
@@ -191,13 +215,10 @@ class Hop:
 		return eff_vertex
 	
 		
-	def __S_F_generic(self, R_h_l, R_h_u, R_g_l, R_g_u):
+	def __S_F_generic(self, R_h_l, R_h_u, R_g_l, R_g_u, R_b):
 		'''
 			Calculate S(F) determined by four rectangles (see paper for details).
 			Note: the rectangles don't have to correspond to the current bounds.
-			They just have to be "properly formed", that is:
-			- R_h_l and R_h_u are "left" (lower-left vertex at [0, ... 0])
-			- R_g_l and R_g_u are "right" (upper-right vertex at [c_1, ... c_N])
 
 			We use this function to calculate both:
 			- the _actual_ S(F) (using the current rectangles from self. as arguments)
@@ -216,24 +237,35 @@ class Hop:
 			  - do NOT belong to R_g_l 
 
 			The points in S_F are all possible positions of the true balances B.
+
+			Addition after jamming: we intersect all of involved rectangles with a new rectangle: R_b.
+			R_b reflects our current knowledge about individual balance bounds.
+			Theoretically, we could intersect the final F with R_b
+			but we can't do it easily because F may not be a rectangle.
 		'''
-		R_u_u = R_h_u.intersect_with(R_g_u)
-		R_u_l = R_h_u.intersect_with(R_g_l)
-		R_l_u = R_h_l.intersect_with(R_g_u)
-		R_l_l = R_h_l.intersect_with(R_g_l)
+
+		R_u_u = R_h_u.intersect_with(R_g_u).intersect_with(R_b)
+		R_u_l = R_h_u.intersect_with(R_g_l).intersect_with(R_b)
+		R_l_u = R_h_l.intersect_with(R_g_u).intersect_with(R_b)
+		R_l_l = R_h_l.intersect_with(R_g_l).intersect_with(R_b)
 		'''
-		print("\nR_h_l:\n", R_h_l, R_h_l.S())
-		print("\nR_h_u:\n", R_h_u, R_h_u.S())
-		print("\nR_g_l:\n", R_g_l, R_g_l.S())
-		print("\nR_g_u:\n", R_g_u, R_g_u.S())
-		print("\nR_u_u:\n", R_u_u)
-		print("\nR_u_l:\n", R_u_l)
-		print("\nR_l_u:\n", R_l_u)
-		print("\nR_l_l:\n", R_l_l)
+		print("\nR_h_l:", R_h_l, R_h_l.S())
+		print("\nR_h_u:", R_h_u, R_h_u.S())
+		print("\nR_g_l:", R_g_l, R_g_l.S())
+		print("\nR_g_u:", R_g_u, R_g_u.S())
+		print("\nR_b:\n", R_b, R_b.S())
+		print("\nAfter intersecting with R_b:")
+		print("\nR_u_u:", R_u_u, R_u_u.S())
+		print("\nR_u_l:", R_u_l, R_u_l.S())
+		print("\nR_l_u:", R_l_u, R_l_u.S())
+		print("\nR_l_l:", R_l_l, R_l_l.S())
 		'''
+		R_l_l_inside_R_u_u = R_l_l.is_inside(R_u_u)
+		assert(R_l_l_inside_R_u_u), self
+		
 		S_F = R_u_u.S() - R_u_l.S() - R_l_u.S() + R_l_l.S()
 		#print(R_u_u.S(), "-", R_u_l.S(), "-", R_l_u.S(), "+", R_l_l.S(), "=", S_F)
-		assert(S_F >= 0)
+		assert(S_F >= 0), self
 		return S_F
 
 
@@ -241,7 +273,7 @@ class Hop:
 		'''
 			Calculate the current S(F): the number of points balances may take as per current knowledge.
 		'''
-		return self.__S_F_generic(self.R_h_l, self.R_h_u, self.R_g_l, self.R_g_u)
+		return self.__S_F_generic(self.R_h_l, self.R_h_u, self.R_g_l, self.R_g_u, self.R_b)
 
 
 	def S_F_a_expected(self, is_dir0, a):
@@ -251,11 +283,23 @@ class Hop:
 			  if we find a s.t. a probe with amount a leaves S_F/2 under the cut,
 			  it automatically leaves S_F/2 above the cut.
 		'''
-		# it we probe in dir0, only h_u and hence R_h_u changes
-		new_R_h_u = ProbingRectangle(self, is_dir0 = True,  bound = a - 1) if is_dir0 else self.R_h_u
-		# it we probe in dir1, only g_u and hence R_g_u changes
-		new_R_g_u = ProbingRectangle(self, is_dir0 = False, bound = a - 1) if not is_dir0 else self.R_g_u
-		S_F_a = self.__S_F_generic(self.R_h_l, new_R_h_u, self.R_g_l, new_R_g_u)
+		new_b_l = [0] * len(self.b_l)
+		new_b_u = self.capacities.copy()
+		available_channels = [i for i in self.e[is_dir0] if i not in self.j[is_dir0]]
+		jamming = len(self.j[dir0]) > 0 or len(self.j[dir1]) > 0
+		# mimic the scenario when probe fails
+		if is_dir0:
+			new_R_h_u = self.R_h_u if jamming else ProbingRectangle(self, is_dir0 = True,  bound = a - 1)
+			new_R_g_u = self.R_g_u
+			for i in available_channels:
+				new_b_u[i] = min(new_b_u[i], a - 1)
+		else:
+			new_R_h_u = self.R_h_u
+			new_R_g_u = self.R_g_u if jamming else ProbingRectangle(self, is_dir0 = False, bound = a - 1)
+			if len(available_channels) == 1:
+				new_b_l[available_channels[0]] = max(new_b_l[available_channels[0]], self.capacities[available_channels[0]] - a)
+		new_R_b = Rectangle(new_b_l, new_b_u)
+		S_F_a = self.__S_F_generic(self.R_h_l, new_R_h_u, self.R_g_l, new_R_g_u, new_R_b)
 		#print("  expected area under the cut:", S_F_a, "(assuming failed probe)")
 		return S_F_a
 
@@ -269,17 +313,40 @@ class Hop:
 		b_inside_R_g_u = self.R_g_u.contains_point(self.B)
 		b_inside_R_h_l = self.R_h_l.contains_point(self.B)
 		b_inside_R_g_l = self.R_g_l.contains_point(self.B)
-		all_good = b_inside_R_h_u and b_inside_R_g_u and not b_inside_R_h_l and not b_inside_R_g_l
+		b_inside_R_b   = self.R_b.contains_point(self.B)
+		all_good = b_inside_R_h_u and b_inside_R_g_u and not b_inside_R_h_l and not b_inside_R_g_l and b_inside_R_b
 		# B must be within the upper bounds' rectangles
 		assert(b_inside_R_h_u), 		"\nB:\n" + "\n".join([str(self.B), str(self.R_h_u)])
 		assert(b_inside_R_g_u), 		"\nB:\n" + "\n".join([str(self.B), str(self.R_g_u)])
 		# B must be outside the lower bounds' rectangles
 		assert(not b_inside_R_h_l), 	"\nB:\n" + "\n".join([str(self.B), str(self.R_h_l)])
 		assert(not b_inside_R_g_l), 	"\nB:\n" + "\n".join([str(self.B), str(self.R_g_l)])
+		# B must be inside the current balance bounds
+		assert(b_inside_R_b), 			"\nB:\n" + "\n".join([str(self.B), str(self.R_b)])
 		return all_good
 
 
-	def next_a(self, is_dir0, naive):
+	'''
+		Functions for checking if we should continue non-enhanced probing
+		(i.e., are h and g fully probed)
+	'''
+	def worth_probing_h(self):
+		return self.can_forward(dir0) and self.h_u - self.h_l > 1
+	
+	def worth_probing_g(self):
+		return self.can_forward(dir1) and self.g_u - self.g_l > 1
+
+	def worth_probing_h_or_g(self, is_dir0):
+		return self.worth_probing_h() if is_dir0 else self.worth_probing_g()
+
+	def worth_probing_channel(self, i):
+		return self.b_u[i] - self.b_l[i] > 1 and (self.can_forward(dir0) or self.can_forward(dir1))
+
+	def worth_probing(self):
+		return self.uncertainty > 0
+
+
+	def next_a(self, is_dir0, naive, jamming):
 		'''
 			Calculate the optimal amount for probe in amount dir0 if is_dir0 is True, else in dir1.
 			The optimal amount is the amount that decreases S(F) by half.
@@ -296,12 +363,22 @@ class Hop:
 			- a: the optimal amount, or None if the hop cannot forward in this direction
 		'''
 		S_F_half = max(1, self.S_F // 2)
-		#print("expected area under cut = ", S_F_a, ", need", S_F_half)
-		a_l, a_u = (self.h_l + 1, self.h_u) if is_dir0 else (self.g_l + 1, self.g_u)
+		if not jamming:
+			# only makes sense to send probes between current estimates on h or g
+			a_l, a_u = (self.h_l + 1, self.h_u) if is_dir0 else (self.g_l + 1, self.g_u)
+		else:
+			# balance bounds may be outside bounds for h / g (those are bounds for maximums!)
+			available_channels = [i for i in self.e[is_dir0] if i not in self.j[is_dir0]]
+			assert(len(available_channels) == 1), "We only support probing one unjammed channel at a time"
+			i = available_channels[0]
+			a_l, a_u = (self.b_l[i] + 1, self.b_u[i]) if is_dir0 else (self.capacities[i] - self.b_u[i], self.capacities[i] - self.b_l[i] - 1)
 		a = (a_l + a_u + 1) // 2
-		if not naive:
+		#print(a_l, a, a_u)
+		#print("Naive = ", naive)
+		if not naive and not jamming:
 			while True:
 				S_F_a = self.S_F_a_expected(is_dir0, a)
+				#print(a_l, a, a_u)
 				if S_F_a < S_F_half:
 					a_l = a
 				else:
@@ -310,45 +387,21 @@ class Hop:
 				if new_a == a:
 					break
 				a = new_a
-				#print("area under cut = ", S_F_a, ", need", S_F_half)
+				#print("if a = ", a, ", then area under cut = ", S_F_a, ", need", S_F_half)
 		assert(a > 0)
 		return a
 
-
-	def diff(self, is_dir0):
-		return self.h_u - self.h_l if is_dir0 else self.g_u - self.g_l
-
-
-	def fully_probed_dir(self, is_dir0):
-		return self.diff(is_dir0) == 1
-
-
-	def fully_probed(self):
-		return self.fully_probed_dir(dir0) and self.fully_probed_dir(dir1)
-
-
-	def worth_probing_dir(self, is_dir0):
-		if is_dir0:
-			return self.can_forward(dir0) and not self.fully_probed_dir(dir0)
-		else:
-			return self.can_forward(dir1) and not self.fully_probed_dir(dir1)
-
-
-	def worth_probing(self):
-		return self.worth_probing_dir(dir0) or self.worth_probing_dir(dir1)
-
-
-	def next_dir(self, naive, prefer_small_amounts=False, threshold_area_difference=0.1):
-		if not (self.worth_probing_dir(dir0) or self.worth_probing_dir(dir1)):
-			print("Hop disabled in both directions:", self)
-			return None
-		if not self.worth_probing_dir(dir0):
+	def next_dir(self, naive, jamming, prefer_small_amounts=False, threshold_area_difference=0.1):
+		assert(self.can_forward(dir0) or self.can_forward(dir1)), self
+		should_consider_dir0 = jamming and self.can_forward(dir0) or not jamming and self.worth_probing_h()
+		should_consider_dir1 = jamming and self.can_forward(dir1) or not jamming and self.worth_probing_g()
+		if not should_consider_dir0:
 			chosen_dir0 = False
-		elif not self.worth_probing_dir(dir1):
+		elif not should_consider_dir1:
 			chosen_dir0 = True
 		else:
-			a_dir0 = self.next_a(dir0, naive)
-			a_dir1 = self.next_a(dir1, naive)
+			a_dir0 = self.next_a(dir0, naive, jamming)
+			a_dir1 = self.next_a(dir1, naive, jamming)
 			if naive or prefer_small_amounts:
 				# choose smaller amount: more likely to pass
 				chosen_dir0 = a_dir0 < a_dir1
@@ -360,7 +413,6 @@ class Hop:
 				if abs(S_F_a_dir0 - S_F_a_dir1) / S_F_half < threshold_area_difference:
 					chosen_dir0 = a_dir0 < a_dir1
 				else:
-					# if the two areas
 					chosen_dir0 = abs(S_F_a_dir0 - S_F_half) < abs(S_F_a_dir1 - S_F_half)
 		return chosen_dir0
 
@@ -376,145 +428,96 @@ class Hop:
 			Return:
 			- None (the current bounds are updated)
 		'''
-		#print("before probe:", self.h_l, self.h_u, self.g_l, self.g_l)
+		#print("before probe:", self.h_l, self.h_u, self.g_l, self.g_u)
 		#print("doing probe", amount, "in", "dir0" if is_dir0 else "dir1")
-		should_update_dir0 = self.h_l < amount <= self.h_u and     is_dir0 and self.can_forward(dir0)
-		should_update_dir1 = self.g_l < amount <= self.g_u and not is_dir0 and self.can_forward(dir1)
+		available_channels_dir0 = list(set(self.e[dir0]) - set(self.j[dir0]))
+		available_channels_dir1 = list(set(self.e[dir1]) - set(self.j[dir1]))
+		#print("available in dir0:", available_channels_dir0)
+		#print("available in dir1:", available_channels_dir1)
+		if len(self.j[dir0]) > 0 or len(self.j[dir1]) > 0:
+			assert(len(available_channels_dir0) <= 1)
+			assert(len(available_channels_dir1) <= 1)
+		jamming = len(self.j[dir0]) > 0 or len(self.j[dir1]) > 0
+		#print("Are we jamming?", jamming)
 		if is_dir0:
-			probe_passed = amount <= self.h
-			#print("Success?", probe_passed)
-			#print("Updating estimates for this hop?", should_update_dir0)
-			if should_update_dir0:
-				if probe_passed:
-					#print("probe passed in dir0")
-					# sic! lower bounds are strict
+			probe_passed = amount <= max(self.B[i] for i in available_channels_dir0)
+			# should only update if the amount is between current bounds
+			# this is not always true for intermediary hops
+			should_update_h = self.h_l < amount <= self.h_u
+			if probe_passed:
+				#print("probe passed in dir0")
+				# sic! lower bounds are strict
+				if should_update_h and not jamming:
+					# update hop-level lower bound
 					self.h_l = amount - 1
-					# FIXME: in probing context, instead of self.N it should be
-					# "the number of channels enabled in at least one direction (?)"
-					if self.N == 1:
-						self.b_l[0] = self.h_l
-						if self.can_forward(dir1):
-							self.g_u = self.capacities[0] - amount
-				else:
-					#print("probe failed in dir0")
+					if len(self.e[dir0]) == 1:
+						only_enabled_dir0 = self.e[dir0][0]
+						self.b_l[only_enabled_dir0] = max(self.b_l[only_enabled_dir0], self.h_l)
+					if len(self.e[dir1]) > 0:
+						self.g_u = min(self.g_u, max(self.capacities[i] - self.b_l[i] for i in self.e[dir1]))
+				if jamming:
+					self.b_l[available_channels_dir0[0]] = max(self.b_l[available_channels_dir0[0]], amount - 1)
+			else:
+				#print("probe failed in dir0")
+				if should_update_h and not jamming:
 					self.h_u = amount - 1
-					if self.N == 1:
-						self.b_u[0] = self.h_u
-						if self.can_forward(dir1):
-							self.g_l = self.capacities[0] - amount
-					for i in range(len(self.b_u)):
+					for i in self.e[dir0]:
 						self.b_u[i] = min(self.b_u[i], self.h_u)
+					if len(self.e[dir1]) > 0:
+						self.g_l = max(self.g_l, min(self.capacities[i] - self.b_u[i] - 1 for i in self.e[dir1]))
+				if jamming:
+					self.b_u[available_channels_dir0[0]] = min(self.b_u[available_channels_dir0[0]], amount - 1)
 		else:
-			probe_passed = amount <= self.g
-			#print("Success?", probe_passed)
-			#print("Updating estimates for this hop?", should_update_dir1)
-			if should_update_dir1:
-				if probe_passed:
-					#print("probe passed in dir1")
+			probe_passed = amount <= max(self.capacities[i] - self.B[i] for i in available_channels_dir1)
+			should_update_g = self.g_l < amount <= self.g_u
+			if probe_passed:
+				#print("probe passed in dir1")
+				if should_update_g and not jamming:
 					self.g_l = amount - 1
-					if self.N == 1:
-						self.b_u[0] = self.capacities[0] - amount
-						if self.can_forward(dir0):
-							self.h_u = self.b_u[0]
-					# must not update b_u[i]: there is a channel that can forward from dir1
-					# doesn't mean all channels are bounded by c_i - a in dir0
-					#for i in range(len(self.b_u)):
-					#	self.b_u[i] = min(self.b_u[i], self.capacities[i] - amount)
-				else:
-					#print("probe failed in dir1")
+					if len(self.e[dir1]) == 1:
+						only_enabled_dir1 = self.e[dir1][0]
+						self.b_u[only_enabled_dir1] = min(self.b_u[only_enabled_dir1], 
+							self.capacities[only_enabled_dir1] - self.g_l - 1)
+					if len(self.e[dir0]) > 0:
+						self.h_u = min(self.h_u, max(self.b_u[i] for i in self.e[dir0]))
+				if jamming:
+					self.b_u[available_channels_dir1[0]] = min(self.b_u[available_channels_dir1[0]],
+						self.capacities[available_channels_dir1[0]] - amount)
+			else:
+				#print("probe failed in dir1")
+				if should_update_g and not jamming:
 					self.g_u = amount - 1
-					if self.N == 1:
-						self.b_l[0] = self.capacities[0] - amount
-						if self.can_forward(dir0):
-							self.h_l = self.b_l[0]
-		#print("after probe:", self.h_l, self.h_u, self.g_l, self.g_l)
+					for i in self.e[dir1]:
+						self.b_l[i] = max(self.b_l[i], self.capacities[i] - self.g_u - 1)
+					if len(self.e[dir0]) > 0:
+						self.h_l = max(self.h_l, min(self.b_l[i] for i in self.e[dir0]))
+				if jamming:
+					self.b_l[available_channels_dir1[0]] = max(self.b_l[available_channels_dir1[0]], 
+						self.capacities[available_channels_dir1[0]] - amount)
+		#print("after probe:", self.h_l, self.h_u, self.g_l, self.g_u)
 		self.__update_dependent_hop_properties()
 		assert(self.__true_balance_is_inside_F()), str(self.B)
 		self.__assert_hop_correct()
-		#print(self)
+		if self.uncertainty == 0:
+			good_corner_points = self.get_corner_points()
+			if len(good_corner_points) == 1:
+				p = good_corner_points[0]
+				#print("Found only viable corner point!", p)
+				for i in range(self.N):
+					if self.worth_probing_channel(i):
+						self.b_l[i] = p[i] - 1
+						self.b_u[i] = p[i]
+				if len(self.e[dir0]) > 0:
+					self.h_l = max(self.h_l, min([p[i] for i in self.e[dir0]]) - 1)
+					self.h_u = min(self.h_u, max([p[i] for i in self.e[dir0]]))
+				if len(self.e[dir1]):
+					self.g_l = max(self.g_l, min([self.capacities[i] - p[i] for i in self.e[dir1]]) - 1)
+					self.g_u = min(self.g_u, max([self.capacities[i] - p[i] for i in self.e[dir1]]))
+			else:
+				print("Corners are not viable points, continue probing")
+				pass
+			self.__update_dependent_hop_properties()
+			assert(self.__true_balance_is_inside_F()), str(self.B)
+			self.__assert_hop_correct()
 		return probe_passed
 
-
-	def probe_with_jam(self, is_dir0, amount, channel_index):
-		'''
-		Probe assuming all channels except one are jammed
-		'''
-		enabled_and_not_jammed_dir0 = list(set(self.e[dir0]) - set(self.j[dir0]))
-		enabled_and_not_jammed_dir1 = list(set(self.e[dir1]) - set(self.j[dir1]))
-		assert(len(enabled_and_not_jammed_dir0) == len(enabled_and_not_jammed_dir1) == 1), (enabled_and_not_jammed_dir0, enabled_and_not_jammed_dir1)
-		assert(enabled_and_not_jammed_dir0[0] == enabled_and_not_jammed_dir1[0] == channel_index)
-		print("Probing channel:", channel_index)
-		exit()
-		return False
-
-
-
-
-
-
-
-
-	def extract_channel_as_hop(self, channel_index):
-		'''
-		The simplest implementation of jamming
-		'''
-		assert(channel_index < self.N)
-		return Hop(
-			capacities = [self.capacities[channel_index]],
-			e_dir0 = [0] if channel_index in self.e[dir0] else [],
-			e_dir1 = [0] if channel_index in self.e[dir1] else [],
-			balances = [self.B[channel_index]])
-
-
-	def guess_true_balance(self, balance, channel_index):
-		assert(channel_index < self.N)
-		assert(balance <= self.capacities[channel_index])
-		guessed = self.B[channel_index] == balance
-		# updating the estimates : will partially speed up the jamming-enhanced probing
-		# can only update lower bounds
-		if channel_index in self.e[dir0]:
-			self.h_l = max(balance - 1, self.h_l)
-		if channel_index in self.e[dir1]:
-			balance_dir1 = self.capacities[channel_index] - balance
-			self.g_l = max(balance_dir1 - 1, self.g_l)
-		self.__update_dependent_hop_properties()
-		self.__assert_hop_correct()
-		return guessed
-		
-
-
-def generate_hop(min_N, max_N, min_capacity, max_capacity, probability_bidirectional, balances=None):
-	'''
-		Generate a random hop.
-
-		Parameters:
-		- min_N: minimum number of channels
-		- max_N: maximum number of channels
-		- min_capacity: minimum capacity of one channel
-		- max_capacity: maximum capacity of one channel
-		- probability_bidirectional: probability that a channel is enabled in both directions
-		- balances: channel balances (generated randomly if None)
-
-		Return:
-		- a Hop instance
-	'''
-	N = random.randint(min_N, max_N)
-	capacities = [random.randint(min_capacity, max_capacity) for _ in range(N)]
-	# avoid generating hops disabled in both directions (we can't probe them anyway)
-	hop_enabled_in_one_direction = False
-	while not hop_enabled_in_one_direction:
-		enabled_dir0 = []
-		enabled_dir1 = []
-		for i in range(N):
-			is_bidirectional = random.random() < probability_bidirectional
-			if is_bidirectional:
-				enabled_dir0.append(i)
-				enabled_dir1.append(i)
-			else:
-				if random.random() < probability_bidirectional:
-					enabled_dir0.append(i)
-				else:
-					enabled_dir0.append(i)
-		hop_enabled_in_one_direction = enabled_dir0 or enabled_dir0
-	#print("Generating hop: capacities", capacities, "enabled_dir0", enabled_dir0, "enabled_dir1", enabled_dir1)
-	return Hop(capacities, enabled_dir0, enabled_dir1, balances)

@@ -114,3 +114,5 @@ def ln_multigraph_to_hop_graph(ln_multigraph):
 		#print(hop)
 		hop_graph[n1][n2]["hop"] = hop
 	return hop_graph
+
+	

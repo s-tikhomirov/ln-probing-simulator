@@ -3,6 +3,7 @@
 # Copyright (c) University of Luxembourg 2020-2021.
 # Developed by Sergei Tikhomirov (sergey.s.tikhomirov@gmail.com), SnT Cryptolux group.
 
+
 import operator
 from functools import reduce
 
@@ -58,6 +59,19 @@ class Rectangle():
 			ucond = all(p <= u for p,u in zip(point, self.u_vertex))
 			return lcond and ucond
 		return False
+
+
+	def is_inside(self, other_rectangle):
+		if not self.non_empty:
+			# empty rectangle is inside any rectangle
+			return True
+		elif not other_rectangle.non_empty:
+			# any non-empty rectangle is not inside an empty rectangle
+			return False
+		else:
+			assert(len(self.l_vertex) == len(other_rectangle.l_vertex))
+			N = len(self.l_vertex)
+			return all((self.l_vertex[i] >= other_rectangle.l_vertex[i] and self.u_vertex[i] <= other_rectangle.u_vertex[i]) for i in range(N))
 
 
 	def intersect_with(self, other_rectangle):

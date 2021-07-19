@@ -3,6 +3,7 @@
 # Copyright (c) University of Luxembourg 2020-2021.
 # Developed by Sergei Tikhomirov (sergey.s.tikhomirov@gmail.com), SnT Cryptolux group.
 
+
 from hop import Hop, dir0, dir1
 from graph import create_multigraph_from_snapshot, ln_multigraph_to_hop_graph
 
@@ -172,26 +173,30 @@ class Prober:
 		return reached_target
 
 
-	def probe_hop(self, target_node_pair, naive, max_failed_probes_per_hop=20, best_dir_chance=0.5):
+	def probe_hop(self, target_node_pair, naive, jamming, max_failed_probes_per_hop=20, best_dir_chance=0.5):
 		target_hop = self.lnhopgraph[target_node_pair[0]][target_node_pair[1]]["hop"]
 		known_failed = {dir0: None, dir1: None}
 		print("\n\n----------------------\nProbing hop", target_node_pair)
-		def probe_hop_in_direction(target_node_pair, is_dir0):
-			print("Probing in direction", "dir0" if is_dir0 else "dir1")
+		def probe_hop_in_direction(target_node_pair, is_dir0, jamming):
+			#print("probe_hop_in_direction: jamming = ", jamming)
+			# should check if jammed
+			#print("Probing in direction", "dir0" if is_dir0 else "dir1")
 			made_probe, reached_target = False, False
-			if target_hop.worth_probing_dir(is_dir0):
-				amount = target_hop.next_a(is_dir0, naive)
+			worth_probing = target_hop.worth_probing() if jamming else target_hop.worth_probing_h_or_g(is_dir0)
+			if worth_probing:
+				amount = target_hop.next_a(is_dir0, naive, jamming)
+				#print("Suggest amount", amount)
 				if (amount < known_failed[is_dir0] if known_failed[is_dir0] is not None else True):
 					hop_is_dir0 = target_node_pair[0] < target_node_pair[1]
 					target_node_pair_in_order = target_node_pair if hop_is_dir0 == is_dir0 else reversed(target_node_pair)
 					paths = self.paths_for_amount(target_node_pair_in_order, amount)
 					try:
-						print("Trying next path for direction", "dir0" if is_dir0 else "dir1", ", amount:", amount)
+						#print("Trying next path for direction", "dir0" if is_dir0 else "dir1", ", amount:", amount)
 						path = next(paths)
 						reached_target = self.issue_probe_along_path(path, amount)
 						made_probe = True
 					except StopIteration:
-						print("Path iteration stopped for direction", "dir0" if is_dir0 else "dir1", ", amount:", amount)
+						#print("Path iteration stopped for direction", "dir0" if is_dir0 else "dir1", ", amount:", amount)
 						known_failed[is_dir0] = amount
 				else:
 					print("Will not probe: we know optimal amount will fail")
@@ -200,15 +205,25 @@ class Prober:
 				print("Not worth probing")
 				pass
 			return made_probe, reached_target
-		num_probes = 0
-		while target_hop.worth_probing():
-			best_dir = target_hop.next_dir(naive)
-			alt_dir = not best_dir if target_hop.worth_probing_dir(not best_dir) else None
-			print("\nNext probe")
-			print("Preferred direction:", "dir0" if best_dir else "dir1")
+		def choose_dir_amount_and_probe(jamming):
+			#print("choose_dir_amount_and_probe: jamming = ", jamming)
+			num_probes = 0
+			best_dir = target_hop.next_dir(naive, jamming)
+			if jamming:
+				available_channels_alt_dir = [i for i in target_hop.e[not best_dir] if i not in target_hop.j[not best_dir]]
+				if len(available_channels_alt_dir) == 0:
+					alt_dir = None
+				else:
+					alt_dir = not best_dir if target_hop.can_forward(not best_dir) else None 
+			else:
+				alt_dir = not best_dir if target_hop.worth_probing_h_or_g(not best_dir) else None
+			#print("\nNext probe")
+			#print("Preferred direction:", "dir0" if best_dir else "dir1")
 			made_probe, reached_target = False, False
 			did_probes, first_attempt = 0, True
 			while not reached_target and did_probes < max_failed_probes_per_hop:
+				#print("reached_target = ", reached_target)
+				#print("did_probes = ", did_probes)
 				# do the first attempt in the preferred direction
 				if first_attempt:
 					direction = best_dir
@@ -238,28 +253,97 @@ class Prober:
 							# can probe in either of two directions
 							# choose with coin flip biased in favor of best direction
 							direction = best_dir if random.random() < best_dir_chance else alt_dir
-				made_probe, reached_target = probe_hop_in_direction(target_node_pair, direction)
+				made_probe, reached_target = probe_hop_in_direction(target_node_pair, direction, jamming)
 				if made_probe:
 					did_probes += 1
 			num_probes += did_probes
 			if not reached_target:
 				print("Cannot reach target hop after", num_probes, "probes")
-				print(target_node_pair)
-				print(target_hop)
-				#print("Current bounds:", target_hop.h_u, "-", target_hop.h_l, target_hop.g_u, "-", target_hop.g_l)
-				#if target_hop.worth_probing_dir(dir0) or target_hop.worth_probing_dir(dir1):
-				#	print("Hop not fully probed yet!")
+				#print(target_node_pair, target_hop)
+			return num_probes, reached_target
+
+		total_num_probes = 0
+		while target_hop.worth_probing_h() or target_hop.worth_probing_g():
+			num_probes, reached_target = choose_dir_amount_and_probe(jamming=False)
+			total_num_probes += num_probes
+			if not reached_target:
 				break
 			else:
-				print("Probed successfully.")
+				print("Probed successfully without jamming.")
 				pass
-		return num_probes
+		if jamming:
+			for i in range(target_hop.N):
+				target_hop.unjam(i, dir0)
+				target_hop.unjam(i, dir1)
+				# count jams as probes
+				total_num_probes += target_hop.jam_all_except_in_direction(i, dir0)
+				total_num_probes += target_hop.jam_all_except_in_direction(i, dir1)
+				while target_hop.worth_probing_channel(i):
+					num_probes, reached_target = choose_dir_amount_and_probe(jamming=True)
+					total_num_probes += num_probes
+					if not reached_target:
+						break
+					else:
+						print("Probed successfully with jamming.")
+						pass
+			target_hop.unjam_all()
+		return total_num_probes
 
 
-	def probe_hops(self, target_hops, naive):
-		return sum([self.probe_hop(target_hop, naive) for target_hop in target_hops])
+	def probe_hops(self, target_hops, naive, jamming):
+		self.reset_all_hops()
+		initial_uncertainty_total = self.uncertainty_for_hops(target_hops)
+		num_probes = sum([self.probe_hop(target_hop, naive, jamming) for target_hop in target_hops])
+		final_uncertainty_total = self.uncertainty_for_hops(target_hops)
+		total_gain_bits = initial_uncertainty_total - final_uncertainty_total
+		probing_speed = total_gain_bits / num_probes
+		total_gain = total_gain_bits / initial_uncertainty_total
+		return total_gain, probing_speed
 
 
 	def reset_all_hops(self):
 		for n1,n2 in self.lnhopgraph.edges():
 			self.lnhopgraph[n1][n2]["hop"].reset_estimates()
+
+
+	def choose_target_hops_with_n_channels(self, max_num_target_hops, num_channels):
+		# we only choose targets that are enabled in at least one directions
+		potential_target_hops = [(u,v) for u,v,e in self.lnhopgraph.edges(data=True) if (
+			e["hop"].N == num_channels and (e["hop"].can_forward(dir0) or e["hop"].can_forward(dir1)))]
+		random.shuffle(potential_target_hops)
+		return potential_target_hops[:max_num_target_hops]
+
+
+	def analyze_graph(self):
+		print("Analyzing graph")
+		all_hops = [self.lnhopgraph.get_edge_data(n1,n2)["hop"] for (n1, n2) in self.lnhopgraph.edges()]
+		def n_channel_hops(all_hops, min_N, max_N):
+			return [hop for hop in all_hops if min_N <= hop.N <= max_N]
+		def share_n_channel_hops(all_hops, min_N, max_N):
+			return len(n_channel_hops(all_hops, min_N, max_N)) / len(all_hops)
+		def capacity(hop):
+			return sum(hop.capacities)
+		channels_in_hops = [hop.N for hop in all_hops]
+		#capacity_in_hops = [capacity(hop) for hop in all_hops]
+		#capacity_in_hops_btc = [c / 100000000 for c in capacity_in_hops]
+		total_capacity = sum([capacity(hop) for hop in all_hops])
+		#share_capacity_in_hops = [c / total_capacity for c in capacity_in_hops]
+		def share_total_capacity_in_n_hops(all_hops, min_N, max_N, total_capacity):
+			hops = n_channel_hops(all_hops, min_N, max_N)
+			return sum([capacity(hop) for hop in hops]) / total_capacity
+		print("Maximal number of channels in a hop:", max(channels_in_hops))
+		print("Share of 1-channel hops:", 		share_n_channel_hops(all_hops, 1, 1))
+		print("Share of 2-channel hops:", 		share_n_channel_hops(all_hops, 2, 2))
+		print("Share of 3-channel hops:", 		share_n_channel_hops(all_hops, 3, 3))
+		print("Share of 4-channel hops:", 		share_n_channel_hops(all_hops, 4, 4))
+		print("Share of 5-channel hops:", 		share_n_channel_hops(all_hops, 5, 5))
+		print("Share of <= 5-channel hops:", 	share_n_channel_hops(all_hops, 1, 5))
+		print("Share of <= 10-channel hops:", 	share_n_channel_hops(all_hops, 1, 10))
+		print("Share of capacity in 1-channel hops:", share_total_capacity_in_n_hops(all_hops, 1, 1, total_capacity))
+		print("Share of capacity in 2-channel hops:", share_total_capacity_in_n_hops(all_hops, 2, 2, total_capacity))
+		print("Share of capacity in 3-channel hops:", share_total_capacity_in_n_hops(all_hops, 3, 3, total_capacity))
+		print("Share of capacity in 4-channel hops:", share_total_capacity_in_n_hops(all_hops, 4, 4, total_capacity))
+		print("Share of capacity in 5-channel hops:", share_total_capacity_in_n_hops(all_hops, 5, 5, total_capacity))
+		print("Share of capacity of <= 5-channel hops:", 	share_total_capacity_in_n_hops(all_hops, 1, 5, total_capacity))
+		print("Share of capacity of <= 10-channel hops:", 	share_total_capacity_in_n_hops(all_hops, 1, 10, total_capacity))
+

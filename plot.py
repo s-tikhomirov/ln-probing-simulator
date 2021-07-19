@@ -3,10 +3,12 @@
 # Copyright (c) University of Luxembourg 2020-2021.
 # Developed by Sergei Tikhomirov (sergey.s.tikhomirov@gmail.com), SnT Cryptolux group.
 
+
 import statistics
 import os
 
 from matplotlib import pyplot as plt
+
 
 SAVE_RESULTS_TO = 'results'
 
@@ -44,5 +46,8 @@ def plot(x_data, y_data_list, x_label, y_label, title, filename, extension=".png
 	plt.tick_params(axis='y', labelsize=TICKSIZE)
 	plt.legend(fontsize=LEGENDSIZE)#, loc='best', bbox_to_anchor=(0.5, 0., 0.5, 0.5))
 	plt.title(title, fontsize=LABELSIZE)
-	plt.savefig(os.path.join(SAVE_RESULTS_TO, filename + extension))
+	path = os.path.join(SAVE_RESULTS_TO, filename + extension)
+	plt.savefig(path)
+	print("Results saved to", path)
 	plt.clf()
+
