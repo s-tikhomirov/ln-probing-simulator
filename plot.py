@@ -13,6 +13,18 @@ from matplotlib import pyplot as plt
 SAVE_RESULTS_TO = 'results'
 
 def plot(x_data, y_data_list, x_label, y_label, title, filename, extension=".png"):
+	'''
+		Plot data and save a plot.
+
+		Parameters:
+		- x_data: a list of data points defining the X axis
+		- y_data_list: a list of list of points defining (potentially multiple) lines (their Y coordinates)
+		- x_label: a label for the X axis
+		- y_label: a label for the Y axis
+		- title: a plot title
+		- filename: filename to save to (with path)
+		- extension: file extension (png, pdf)
+	'''
 	# we assume each item in data_list is a tuple (data, label)
 	# where data is a list of points corresponding to the number of channels from 1 to len(data)+1
 	LABELSIZE = 20

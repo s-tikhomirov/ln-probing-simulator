@@ -114,12 +114,12 @@ class ProbingRectangle(Rectangle):
 		If dir1, the right vertex is [c1, ..., cN].
 		The other vertex is determined by the effective probe amount along the respective dimension.
 	'''
-	def __init__(self, hop, is_dir0, bound):
+	def __init__(self, hop, direction, bound):
 		# bound = amount - 1
 		# this makes probing rectangles inclusive - easier to intersect and calculate areas
 		# bound is one of: h_l, h_u, g_l, g_u
-		vertex = hop.effective_vertex(is_dir0, bound)
-		l_vertex, u_vertex = ([0] * hop.N, vertex) if is_dir0 else (vertex, hop.capacities)
+		vertex = hop.effective_vertex(direction, bound)
+		l_vertex, u_vertex = ([0] * hop.N, vertex) if direction else (vertex, hop.c)
 		Rectangle.__init__(self, l_vertex, u_vertex)
 
 

@@ -62,22 +62,22 @@ class Prober:
 			self.lnhopgraph.add_node(first)
 		if second not in self.lnhopgraph.nodes():
 			self.lnhopgraph.add_node(second)
-		is_dir0 = first < second
-		balance_at_first = capacity if is_dir0 else 0
+		direction = dir0 if first < second else dir1
+		balance_at_first = capacity if direction == dir0 else 0
 		if self.lnhopgraph.has_edge(first, second):
 			hop = self.lnhopgraph[first][second]["hop"]
 			#print("Old hop:", hop)
-			capacities = hop.capacities.append(capacity)
-			e_dir0 = hop.e[dir0].append(is_dir0)
-			e_dir1 = hop.e[dir0].append(not is_dir0)
+			capacities = hop.c.append(capacity)
+			e_dir0 = hop.e[dir0].append(direction)
+			e_dir1 = hop.e[dir0].append(not direction)
 			balances = hop.balances.append(balance_at_first)
 			updated_hop = Hop(capacities, e_dir0, e_dir1, balances)
 			#print("Updated hop:", updated_hop)
 			self.lnhopgraph[first][second]["hop"] = updated_hop
 		else:
 			self.lnhopgraph.add_edge(first, second)
-			e_dir0 = [0] if     is_dir0 else []
-			e_dir1 = [0] if not is_dir0 else []
+			e_dir0 = [0] if direction == dir0 else []
+			e_dir1 = [0] if direction == dir1 else []
 			self.lnhopgraph[first][second]["hop"] = Hop([capacity], e_dir0, e_dir1, [balance_at_first])
 
 
@@ -96,8 +96,8 @@ class Prober:
 				We include edges that (theoretically) can forward the amount (i.e., their upper bound is not lower than amount).
 			'''
 			hop = self.lnhopgraph[n1][n2]["hop"]
-			is_dir0 = n1 < n2
-			if is_dir0:
+			direction = dir0 if n1 < n2 else dir1
+			if direction == dir0:
 				return hop.can_forward(dir0) and amount < hop.h_u
 			else:
 				return hop.can_forward(dir1) and amount < hop.g_u
@@ -166,7 +166,7 @@ class Prober:
 			reached_target = n2 == path[-1]
 			#print("----probing intermediary? hop between", n1, "and", n2)
 			hop = self.lnhopgraph[n1][n2]["hop"]
-			probe_passed = hop.probe(is_dir0 = n1 < n2, amount = amount)
+			probe_passed = hop.probe(direction = dir0 if n1 < n2 else dir1, amount = amount)
 			if not probe_passed:
 				break
 		#print("probe reached_target?", reached_target)
@@ -177,27 +177,27 @@ class Prober:
 		target_hop = self.lnhopgraph[target_node_pair[0]][target_node_pair[1]]["hop"]
 		known_failed = {dir0: None, dir1: None}
 		print("\n\n----------------------\nProbing hop", target_node_pair)
-		def probe_hop_in_direction(target_node_pair, is_dir0, jamming):
+		def probe_hop_in_direction(target_node_pair, direction, jamming):
 			#print("probe_hop_in_direction: jamming = ", jamming)
 			# should check if jammed
-			#print("Probing in direction", "dir0" if is_dir0 else "dir1")
+			#print("Probing in direction", "dir0" if direction else "dir1")
 			made_probe, reached_target = False, False
-			worth_probing = target_hop.worth_probing() if jamming else target_hop.worth_probing_h_or_g(is_dir0)
+			worth_probing = target_hop.worth_probing() if jamming else target_hop.worth_probing_h_or_g(direction)
 			if worth_probing:
-				amount = target_hop.next_a(is_dir0, naive, jamming)
+				amount = target_hop.next_a(direction, naive, jamming)
 				#print("Suggest amount", amount)
-				if (amount < known_failed[is_dir0] if known_failed[is_dir0] is not None else True):
-					hop_is_dir0 = target_node_pair[0] < target_node_pair[1]
-					target_node_pair_in_order = target_node_pair if hop_is_dir0 == is_dir0 else reversed(target_node_pair)
+				if (amount < known_failed[direction] if known_failed[direction] is not None else True):
+					hop_direction = dir0 if target_node_pair[0] < target_node_pair[1] else dir1
+					target_node_pair_in_order = target_node_pair if hop_direction == direction else reversed(target_node_pair)
 					paths = self.paths_for_amount(target_node_pair_in_order, amount)
 					try:
-						#print("Trying next path for direction", "dir0" if is_dir0 else "dir1", ", amount:", amount)
+						#print("Trying next path for direction", "dir0" if direction else "dir1", ", amount:", amount)
 						path = next(paths)
 						reached_target = self.issue_probe_along_path(path, amount)
 						made_probe = True
 					except StopIteration:
-						#print("Path iteration stopped for direction", "dir0" if is_dir0 else "dir1", ", amount:", amount)
-						known_failed[is_dir0] = amount
+						#print("Path iteration stopped for direction", "dir0" if direction else "dir1", ", amount:", amount)
+						known_failed[direction] = amount
 				else:
 					print("Will not probe: we know optimal amount will fail")
 					pass
@@ -322,7 +322,7 @@ class Prober:
 		def share_n_channel_hops(all_hops, min_N, max_N):
 			return len(n_channel_hops(all_hops, min_N, max_N)) / len(all_hops)
 		def capacity(hop):
-			return sum(hop.capacities)
+			return sum(hop.c)
 		channels_in_hops = [hop.N for hop in all_hops]
 		#capacity_in_hops = [capacity(hop) for hop in all_hops]
 		#capacity_in_hops_btc = [c / 100000000 for c in capacity_in_hops]

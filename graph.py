@@ -3,6 +3,9 @@
 # Copyright (c) University of Luxembourg 2020-2021.
 # Developed by Sergei Tikhomirov (sergey.s.tikhomirov@gmail.com), SnT Cryptolux group.
 
+'''
+	Auxiliary operations with the LN graph.
+'''
 
 from hop import Hop
 
@@ -20,6 +23,15 @@ class Channel:
 
 
 def create_multigraph_from_snapshot(snapshot_filename):
+	'''
+		Create a NetworkX multigraph from a clightning's listchannels.json snapshot.
+		Multigraph means each edge corresponds to an edge (parallel edges allowed).
+
+		Parameters:
+		- snapshot_filename: path to the snapshot
+
+		Return: the multigraph (the maximal connected component only).
+	'''
 	print("Creating LnHopGraph from file:", snapshot_filename)
 	with open(snapshot_filename, 'r') as snapshot_file:
 		network = json.load(snapshot_file)
@@ -30,8 +42,8 @@ def create_multigraph_from_snapshot(snapshot_filename):
 	channels = dict()
 	for channel_direction in network["channels"]:
 		cid = channel_direction["short_channel_id"]
-		is_dir0 = channel_direction["source"] < channel_direction["destination"]
-		if is_dir0:
+		direction = channel_direction["source"] < channel_direction["destination"]
+		if direction:
 			source = channel_direction["source"]
 			destination = channel_direction["destination"]
 		else:
@@ -40,13 +52,13 @@ def create_multigraph_from_snapshot(snapshot_filename):
 		if cid not in channels:
 			#print("creating new channel for", cid)
 			dir0_enabled, dir1_enabled = \
-			(channel_direction["active"], False) if is_dir0 else (False, channel_direction["active"])
+			(channel_direction["active"], False) if direction else (False, channel_direction["active"])
 			channel = Channel(source, destination, channel_direction["satoshis"], dir0_enabled, dir1_enabled)
 			channels[cid] = channel
 		else:
 			#print("updating existing channels for", cid)
 			channel = channels[cid]
-			if is_dir0:
+			if direction:
 				channel.dir0_enabled = channel_direction["active"]
 			else:
 				channel.dir1_enabled = channel_direction["active"]
@@ -85,13 +97,15 @@ def create_multigraph_from_snapshot(snapshot_filename):
 
 def ln_multigraph_to_hop_graph(ln_multigraph):
 	'''
-		Generate a hopgraph from an LN multi-graph.
+		Generate a hopgraph from an LN multigraph.
+		A hopgraph doesn't allow parallel edges.
+		Instead, parallel channels are encoded in edge attributes.
 
 		Parameters:
-		- ln_g: LN model multi-graph
+		- ln_multigraph: LN model multigraph
 
 		Return:
-		- hopgraph: a non-directed graph where each edge models a hop
+		- hop_graph: a non-directed graph where each edge models a hop
 	'''
 	hop_graph = nx.Graph()
 	# initialize hop graph with nodes and empty edge attributes

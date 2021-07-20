@@ -3,6 +3,9 @@
 # Copyright (c) University of Luxembourg 2020-2021.
 # Developed by Sergei Tikhomirov (sergey.s.tikhomirov@gmail.com), SnT Cryptolux group.
 
+'''
+	Run experiments as described in Section 5.3 of the paper.
+'''
 
 import statistics
 
@@ -13,9 +16,26 @@ from plot import plot
 
 def experiment_1(prober, num_target_hops, num_runs_per_experiment, max_num_channels, use_snapshot, jamming):
 	'''
-		Measure information gain and probing speed on synthetic hops
-		consisting of bi-directional channels.
+		Measure the information gain and probing speed for isolated and snapshot-based probing.
+
+		Generate or choose target hops with various number of channels.
+		Probe the target hops in isolated and snapshot-based mode (if prober is provided),
+		using naive and optimal amount choice method.
+		Measure and plot the achieved information gain and probing speed.
+		See Section 5.2.1 in the paper.
+
+		Parameters:
+		- prober: the Prober object (None to run only isolated probing on synthetic hops)
+		- num_target_hops: how many target hops to choose / generate
+		- num_runs_per_experiments: how many experiments to run (gain and speed are averaged)
+		- max_num_channels: consider target hops containing from 1 to this many channels
+		- use_snapshot: if False, run only isolated probing on synthetic hops; 
+		if True, run isolated and snapshot-based probing on synthetic and snapshot hops.
+		- jamming: use jamming (after h and g are fully probed without jamming)
+
+		Return: None (saves the resulting plots)
 	'''
+
 	print("\n\n**** Running experiment 1 ****")
 
 	BITCOIN = 100*1000*1000
@@ -35,11 +55,11 @@ def experiment_1(prober, num_target_hops, num_runs_per_experiment, max_num_chann
 	
 	assert(not use_snapshot or prober is not None)
 
-	# There is only 7 hops with 6 channels, 4 hops with 7 channels
-	# It only makes sense to test snapshot-based hops for N from 1 to 5!
-	# For larger N, test on synthetic hops
+	# There are only 7 hops with 6 channels and 4 hops with 7 channels in the snapshot
+	# It only makes sense to consider snapshot-based hops for N from 1 to 5!
+	# For larger N, we only consider on synthetic hops.
 
-	for i,num_channels in enumerate(NUM_CHANNELS_IN_TARGET_HOPS):
+	for i, num_channels in enumerate(NUM_CHANNELS_IN_TARGET_HOPS):
 		print("\n\nN = ", num_channels)
 		gain_list_naive_synthetic, gain_list_optimal_synthetic = [], []
 		speed_list_naive_synthetic, speed_list_optimal_synthetic = [], []
@@ -57,9 +77,10 @@ def experiment_1(prober, num_target_hops, num_runs_per_experiment, max_num_chann
 				target_hops = generate_hops(num_target_hops, num_channels, 
 					MIN_CAPACITY_OF_SYNTHETIC_HOPS, MAX_CAPACITY_OF_SYNTHETIC_HOPS)
 			print("Selected" if use_snapshot else "Generated", len(target_hops), "target hops with", num_channels, "channels.")
-			gain_naive_synthetic_value,	speed_naive_synthetic_value 		\
+			# probe target hops in isolated mode
+			gain_naive_synthetic_value,	speed_naive_synthetic_value \
 			= probe_hops_isolated(target_hops, naive=True, jamming=jamming)
-			gain_optimal_synthetic_value,	speed_optimal_synthetic_value 	\
+			gain_optimal_synthetic_value, speed_optimal_synthetic_value \
 			= probe_hops_isolated(target_hops, naive=False, jamming=jamming)
 			diff_gains = abs((gain_naive_synthetic_value-gain_optimal_synthetic_value) / gain_optimal_synthetic_value)
 			max_diff_gains = 0.01
@@ -70,11 +91,11 @@ def experiment_1(prober, num_target_hops, num_runs_per_experiment, max_num_chann
 			speed_list_naive_synthetic.append(	speed_naive_synthetic_value)
 			speed_list_optimal_synthetic.append(speed_optimal_synthetic_value)
 			if use_snapshot:
+				# probe target hops in snapshot mode
 				gain_optimal_naive_snapshot_value,	speed_naive_snapshot_value = \
 				prober.probe_hops(target_hops_nodes, naive=True, jamming=jamming)
 				gain_optimal_optimal_snapshot_value,speed_optimal_snapshot_value = \
 				prober.probe_hops(target_hops_nodes, naive=False, jamming=jamming)
-				#assert(abs((gain_optimal_naive_snapshot_value-gain_optimal_optimal_snapshot_value) / gain_optimal_optimal_snapshot_value) < 0.01)
 				gain_list_naive_snapshot.append(			gain_optimal_naive_snapshot_value)
 				gain_list_optimal_snapshot.append(			gain_optimal_optimal_snapshot_value)
 				speed_list_naive_snapshot.append(	speed_naive_snapshot_value)
@@ -88,6 +109,7 @@ def experiment_1(prober, num_target_hops, num_runs_per_experiment, max_num_chann
 			gains_optimal_snapshot[i] 	= gain_list_optimal_snapshot
 			speed_naive_snapshot[i]		= speed_list_naive_snapshot
 			speed_optimal_snapshot[i]	= speed_list_optimal_snapshot
+	# prepare data for information gains plot
 	y_data_gains_plot = [
 		(gains_optimal_synthetic,	"Isolated probing (optimal = naive)",	"--",	"blue"),
 		(gains_optimal_snapshot,	"Snapshot probing, optimal",			"-",	"green"),
@@ -95,6 +117,7 @@ def experiment_1(prober, num_target_hops, num_runs_per_experiment, max_num_chann
 		] if use_snapshot else [
 		(gains_optimal_synthetic,	"Isolated probing (optimal = naive)",	"--",	"blue")
 		]
+	# prepare data for probing speeds plot
 	y_data_speed_plot = [
 		(speed_optimal_synthetic,	"Isolated probing, optimal",	"--",	"green"),
 		(speed_naive_synthetic,		"Isolated probing, naive", 		"--",	"red"),
@@ -106,27 +129,35 @@ def experiment_1(prober, num_target_hops, num_runs_per_experiment, max_num_chann
 		]
 	comment = "Runs per experiment: " + str(num_runs_per_experiment) + ", target hops: " + str(num_target_hops)
 	targets_source = "snapshot" if use_snapshot else "synthetic"
+	jamming_suffix = "_jamming" if jamming else ""
 	plot(
 		x_data 		= NUM_CHANNELS_IN_TARGET_HOPS,
 		y_data_list = y_data_gains_plot,
 		x_label 	= "Number of channels in target hops. " + comment,
 		y_label 	= "Achieved information gain\n (share of initial uncertainty)",
 		title		= "Achieved information gain (" + targets_source + " targets)\n",
-		filename 	= "channels_gains_" + targets_source)
+		filename 	= "channels_gains_" + targets_source + jamming_suffix)
 	plot(
 		x_data 		= NUM_CHANNELS_IN_TARGET_HOPS,
 		y_data_list = y_data_speed_plot, 
 		x_label 	= "Number of channels in target hops. " + comment,
 		y_label 	= "Probing speed (bits / probe)", 
 		title 		= "Probing speed (" + targets_source + " targets)\n",
-		filename 	= "channels_speed_" + targets_source)
+		filename 	= "channels_speed_" + targets_source + jamming_suffix)
 
 	print("\n\n**** Experiment 1 complete ****")
 
 
 def experiment_2(num_target_hops, num_runs_per_experiment):
 	'''
-		Measure the gain and speed for 3 different configurations of a 2-channel hop.
+		Measure the information gain and probing speed for 3 different configurations of a 2-channel hop.
+		See Section 5.2.2 in the paper.
+
+		Parameters:
+		- num_target_hops: how man target hops to consider
+		- num_runs_per_experiment: how many times to run each experiment (results are averaged)
+
+		Return: None (print resulting stats)
 	'''
 
 	print("\n\n**** Running experiment 2 ****")
@@ -179,8 +210,8 @@ def experiment_2(num_target_hops, num_runs_per_experiment):
 		return Hop(SMALL_BIG, ENABLED_BOTH, ENABLED_NONE)
 
 	def compare_methods(target_hops):
-		gain_naive, 	speed_naive 	= probe_hops_isolated(target_hops, naive=True)
-		gain_optimal, 	speed_optimal 	= probe_hops_isolated(target_hops, naive=False)
+		gain_naive, 	speed_naive 	= probe_hops_isolated(target_hops, naive = True, jamming = False)
+		gain_optimal, 	speed_optimal 	= probe_hops_isolated(target_hops, naive = False, jamming = False)
 		assert(abs((gain_naive-gain_optimal) / gain_optimal) < 0.05), (gain_naive, gain_optimal)
 		return gain_optimal, speed_naive, speed_optimal
 
@@ -248,6 +279,14 @@ def experiment_2(num_target_hops, num_runs_per_experiment):
 def experiment_3(num_target_hops, num_runs_per_experiment, max_ratio):
 	'''
 		Study two-channel hops depending on ratio of long side to short.
+		See Section 5.2.3 in the paper.
+
+		Parameters:
+		- num_target_hops: how many target hops to consider
+		- num_runs_per_experiment: how many times to run each experiment (results are averaged)
+		- max_ratio: consider the ratio of channel capacities from 1 to max_ratio
+
+		Return: None (save resulting plots)
 	'''
 
 	print("\n\n**** Running experiment 3 ****")
@@ -265,8 +304,8 @@ def experiment_3(num_target_hops, num_runs_per_experiment, max_ratio):
 		gain_list, speed_list_naive, speed_list_optimal = [], [], []
 		for _ in range(num_runs_per_experiment):
 			target_hops = [Hop(capacities, [0,1], [0,1]) for _ in range(num_target_hops)]
-			gain_naive,		speed_naive 	= probe_hops_isolated(target_hops, naive=True)
-			gain_optimal,	speed_optimal 	= probe_hops_isolated(target_hops, naive=False)
+			gain_naive,		speed_naive 	= probe_hops_isolated(target_hops, naive = True, jamming = False)
+			gain_optimal,	speed_optimal 	= probe_hops_isolated(target_hops, naive = False, jamming = False)
 			assert(abs((gain_naive-gain_optimal) / gain_optimal) < 0.05), (gain_naive, gain_optimal)
 			gain_list.append(gain_optimal)
 			speed_list_naive.append(speed_naive)
