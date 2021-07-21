@@ -400,6 +400,7 @@ class Hop:
 		assert(a > 0)
 		return a
 
+
 	def next_dir(self, naive, jamming, prefer_small_amounts=False, threshold_area_difference=0.1):
 		'''
 			Suggest the optimal direction for the next probe.
@@ -449,12 +450,7 @@ class Hop:
 			Return:
 			- None (the current bounds are updated)
 		'''
-		#print("before probe:", self.h_l, self.h_u, self.g_l, self.g_u)
 		#print("doing probe", amount, "in", "dir0" if direction else "dir1")
-		
-		
-		#print("available in dir0:", available_channels_dir0)
-		#print("available in dir1:", available_channels_dir1)
 		jamming = len(self.j[dir0]) > 0 or len(self.j[dir1]) > 0
 		#print("Are we jamming?", jamming)
 		available_channels = [i for i in self.e[direction] if i not in self.j[direction]]
@@ -474,12 +470,12 @@ class Hop:
 				if should_update_h and not jamming:
 					# update hop-level lower bound
 					self.h_l = amount - 1
-					if len(self.e[direction]) == 1:
+					if len(self.e[dir0]) == 1:
 						# if only one channel is enabled, we can update this channel's lower bound
-						self.b_l[self.e[direction][0]] = max(self.b_l[self.e[direction][0]], self.h_l)
-					if len(self.e[not direction]) > 0:
+						self.b_l[self.e[dir0][0]] = max(self.b_l[self.e[dir0][0]], self.h_l)
+					if len(self.e[dir1]) > 0:
 						# if some channels are enabled in the opposite direction, update that upper bound
-						self.g_u = min(self.g_u, max(self.c[i] - self.b_l[i] for i in self.e[not direction]))
+						self.g_u = min(self.g_u, max(self.c[i] - self.b_l[i] for i in self.e[dir1]))
 				if jamming:
 					# if we're jamming, we can update the only unjammed channel's lower bound
 					self.b_l[available_channels[0]] = max(self.b_l[available_channels[0]], amount - 1)
@@ -488,12 +484,12 @@ class Hop:
 				if should_update_h and not jamming:
 					# update hop-level upper bound
 					self.h_u = amount - 1
-					for i in self.e[direction]:
+					for i in self.e[dir0]:
 						# update all channels' upper bounds
 						self.b_u[i] = min(self.b_u[i], self.h_u)
-					if len(self.e[not direction]) > 0:
+					if len(self.e[dir1]) > 0:
 						# if some channels are enabled in the opposite direction, update their lower bound
-						self.g_l = max(self.g_l, min(self.c[i] - self.b_u[i] - 1 for i in self.e[not direction]))
+						self.g_l = max(self.g_l, min(self.c[i] - self.b_u[i] - 1 for i in self.e[dir1]))
 				if jamming:
 					# if we're jamming, we can update the only unjammed channel's upper bound
 					self.b_u[available_channels[0]] = min(self.b_u[available_channels[0]], amount - 1)
@@ -503,11 +499,11 @@ class Hop:
 				#print("probe passed in dir1")
 				if should_update_g and not jamming:
 					self.g_l = amount - 1
-					if len(self.e[direction]) == 1:
-						self.b_u[self.e[direction][0]] = min(self.b_u[self.e[direction][0]], 
-							self.c[self.e[direction][0]] - self.g_l - 1)
-					if len(self.e[not direction]) > 0:
-						self.h_u = min(self.h_u, max(self.b_u[i] for i in self.e[not direction]))
+					if len(self.e[dir1]) == 1:
+						self.b_u[self.e[dir1][0]] = min(self.b_u[self.e[dir1][0]], 
+							self.c[self.e[dir1][0]] - self.g_l - 1)
+					if len(self.e[dir0]) > 0:
+						self.h_u = min(self.h_u, max(self.b_u[i] for i in self.e[dir0]))
 				if jamming:
 					self.b_u[available_channels[0]] = min(self.b_u[available_channels[0]],
 						self.c[available_channels[0]] - amount)
@@ -515,10 +511,10 @@ class Hop:
 				#print("probe failed in dir1")
 				if should_update_g and not jamming:
 					self.g_u = amount - 1
-					for i in self.e[direction]:
+					for i in self.e[dir1]:
 						self.b_l[i] = max(self.b_l[i], self.c[i] - self.g_u - 1)
-					if len(self.e[not direction]) > 0:
-						self.h_l = max(self.h_l, min(self.b_l[i] for i in self.e[not direction]))
+					if len(self.e[dir0]) > 0:
+						self.h_l = max(self.h_l, min(self.b_l[i] for i in self.e[dir0]))
 				if jamming:
 					self.b_l[available_channels[0]] = max(self.b_l[available_channels[0]], 
 						self.c[available_channels[0]] - amount)

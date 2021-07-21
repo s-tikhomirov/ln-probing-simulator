@@ -12,6 +12,7 @@ from matplotlib import pyplot as plt
 
 SAVE_RESULTS_TO = 'results'
 
+
 def plot(x_data, y_data_list, x_label, y_label, title, filename, extension=".png"):
 	'''
 		Plot data and save a plot.

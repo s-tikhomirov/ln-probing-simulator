@@ -3,6 +3,10 @@
 # Copyright (c) University of Luxembourg 2020-2021.
 # Developed by Sergei Tikhomirov (sergey.s.tikhomirov@gmail.com), SnT Cryptolux group.
 
+'''
+	Rectangles (N-dimensional cuboids) that describe sets of points where the true balances may or may not be.
+	See the paper for details.
+'''
 
 import operator
 from functools import reduce
@@ -10,42 +14,51 @@ from functools import reduce
 
 class Rectangle():
 	'''
-		A class for a generic N-dimensional rectangle defined by two opposing vertices.
-		(This does not immediately relate to probing.)
+		A generic rectangle is defined by two opposing vertices: the lower and the upper.
+		All coordinates of the lower vertex are less than or equal to than of the upper vertex.
 	'''
 
 	def __init__(self, l_vertex, u_vertex):
+		'''
+			Initialize a rectangle.
+
+			Parameters:
+			l_vertex: the lower-left vertex
+			u_vertex: the upper-right vertex
+		'''
 		if l_vertex and u_vertex:
 			assert(len(l_vertex) == len(u_vertex))
-			self.non_empty = all(coord_l <= coord_u for coord_l, coord_u in zip(l_vertex, u_vertex))
-			self.l_vertex = l_vertex if self.non_empty else None
-			self.u_vertex = u_vertex if self.non_empty else None
+			# if at at least one dimension l_vertex is higher than u_vertes, the rectangle is empty
+			self.is_empty = not all(coord_l <= coord_u for coord_l, coord_u in zip(l_vertex, u_vertex))
+			self.l_vertex = None if self.is_empty else l_vertex
+			self.u_vertex = None if self.is_empty else u_vertex
 		else:
-			self.non_empty = False
+			self.is_empty = True
 			self.l_vertex = None
 			self.u_vertex = None
 
 
 	def S(self):
 		'''
-			Calculate the are of the rectangle.
-			The area is the product of the widths of its sides.
-			(All boundaries are inclusive.)
+			Calculate the area of the rectangle.
+			The area of a rectangle is the product of the widths of its sides.
+			All boundaries are inclusive.
 		'''
-		if self.non_empty:
+		if self.is_empty:
+			return 0
+		else:
 			widths = [max(0, coord_u - coord_l + 1) for coord_l, coord_u in zip(self.l_vertex, self.u_vertex)]
 			return reduce(operator.mul, widths, 1)
-		return 0
 
 
 	def __str__(self):
 		s = "\n"
-		if self.non_empty:
+		if self.is_empty:
+			s = "\nEmpty figure"
+		else:
 			s += "Rectangle with vertices:\n"
 			s += str(self.l_vertex) + "\n"
 			s += str(self.u_vertex)
-		else:
-			s = "\nEmpty figure"
 		return s
 
 
@@ -53,7 +66,7 @@ class Rectangle():
 		'''
 			Return True if a given point is inside the rectangle, False otherwise.
 		'''
-		if self.non_empty and point is not None:
+		if not self.is_empty and point is not None:
 			assert(len(point) == len(self.l_vertex))
 			lcond = all(l <= p for l,p in zip(self.l_vertex, point))
 			ucond = all(p <= u for p,u in zip(point, self.u_vertex))
@@ -62,16 +75,25 @@ class Rectangle():
 
 
 	def is_inside(self, other_rectangle):
-		if not self.non_empty:
+		'''
+			Check if this rectangle is inside another rectangle.
+
+			Parameters:
+			- other_rectangle: the other ("outside") rectangle
+
+			Return:
+			- True if this rectangle (self) is fully inside other_rectangle
+		'''
+		if self.is_empty:
 			# empty rectangle is inside any rectangle
 			return True
-		elif not other_rectangle.non_empty:
+		elif other_rectangle.is_empty:
 			# any non-empty rectangle is not inside an empty rectangle
 			return False
 		else:
 			assert(len(self.l_vertex) == len(other_rectangle.l_vertex))
-			N = len(self.l_vertex)
-			return all((self.l_vertex[i] >= other_rectangle.l_vertex[i] and self.u_vertex[i] <= other_rectangle.u_vertex[i]) for i in range(N))
+			return all((self.l_vertex[i] >= other_rectangle.l_vertex[i] and 
+				self.u_vertex[i] <= other_rectangle.u_vertex[i]) for i in range(len(self.l_vertex)))
 
 
 	def intersect_with(self, other_rectangle):
@@ -86,7 +108,7 @@ class Rectangle():
 			- the intersection Rectangle or EmptyRectangle if the intersection is empty
 
 		'''
-		if not (self.non_empty and other_rectangle.non_empty):
+		if self.is_empty or other_rectangle.is_empty:
 			# anything intersected with empty figure is empty
 			return EmptyRectangle()
 		assert(len(self.l_vertex) == len(other_rectangle.l_vertex))
@@ -109,15 +131,13 @@ class Rectangle():
 
 class ProbingRectangle(Rectangle):
 	'''
-		A rectangle corresponding to a probe.
-		If dir0, the left vertex is [0, ... 0].
-		If dir1, the right vertex is [c1, ..., cN].
+		A rectangle corresponding to a probe without jamming.
+		If dir0, the lower-left vertex is [0, ... 0].
+		If dir1, the upper-right vertex is [c1, ..., cN].
 		The other vertex is determined by the effective probe amount along the respective dimension.
 	'''
 	def __init__(self, hop, direction, bound):
-		# bound = amount - 1
-		# this makes probing rectangles inclusive - easier to intersect and calculate areas
-		# bound is one of: h_l, h_u, g_l, g_u
+		# bound = amount - 1 (it makes all rectangles' borders inclusive)
 		vertex = hop.effective_vertex(direction, bound)
 		l_vertex, u_vertex = ([0] * hop.N, vertex) if direction else (vertex, hop.c)
 		Rectangle.__init__(self, l_vertex, u_vertex)

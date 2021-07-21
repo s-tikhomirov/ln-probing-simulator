@@ -2,6 +2,8 @@
 
 This simulator accompanies the paper "Analysis and Probing of Parallel Channels in the Lightning Network".
 
+Requires `python3`, `networkx`, `matplotlib`.
+
 Usage example:
 
 ```

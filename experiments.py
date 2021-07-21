@@ -4,7 +4,7 @@
 # Developed by Sergei Tikhomirov (sergey.s.tikhomirov@gmail.com), SnT Cryptolux group.
 
 '''
-	Run experiments as described in Section 5.3 of the paper.
+	Run experiments as described in the paper.
 '''
 
 import statistics
@@ -55,7 +55,7 @@ def experiment_1(prober, num_target_hops, num_runs_per_experiment, max_num_chann
 	
 	assert(not use_snapshot or prober is not None)
 
-	# There are only 7 hops with 6 channels and 4 hops with 7 channels in the snapshot
+	# There are only 7 hops with 6 channels and 4 hops with 7 channels in the snapshot from 2021-05-23
 	# It only makes sense to consider snapshot-based hops for N from 1 to 5!
 	# For larger N, we only consider on synthetic hops.
 
