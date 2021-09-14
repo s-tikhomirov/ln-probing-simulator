@@ -7,7 +7,7 @@
 	Auxiliary operations with the LN graph.
 '''
 
-from hop import Hop
+from hop import Hop, dir0, dir1
 
 import networkx as nx
 import json
@@ -32,18 +32,16 @@ def create_multigraph_from_snapshot(snapshot_filename):
 
 		Return: the multigraph (the maximal connected component only).
 	'''
-	print("Creating LnHopGraph from file:", snapshot_filename)
+	print("Creating LN graph from file:", snapshot_filename, "...")
 	with open(snapshot_filename, 'r') as snapshot_file:
 		network = json.load(snapshot_file)
-	edges_set = set()
-	nodes_set = set()
-	edges = []
+	edges_set, nodes_set = set(), set()
+	edges, channels = [], dict()
 	# cid -> Channel
-	channels = dict()
 	for channel_direction in network["channels"]:
 		cid = channel_direction["short_channel_id"]
 		direction = channel_direction["source"] < channel_direction["destination"]
-		if direction:
+		if direction == dir0:
 			source = channel_direction["source"]
 			destination = channel_direction["destination"]
 		else:
@@ -51,14 +49,13 @@ def create_multigraph_from_snapshot(snapshot_filename):
 			destination = channel_direction["source"]
 		if cid not in channels:
 			#print("creating new channel for", cid)
-			dir0_enabled, dir1_enabled = \
-			(channel_direction["active"], False) if direction else (False, channel_direction["active"])
+			dir0_enabled, dir1_enabled = (channel_direction["active"], False) if direction == dir0 else (False, channel_direction["active"])
 			channel = Channel(source, destination, channel_direction["satoshis"], dir0_enabled, dir1_enabled)
 			channels[cid] = channel
 		else:
 			#print("updating existing channels for", cid)
 			channel = channels[cid]
-			if direction:
+			if direction == dir0:
 				channel.dir0_enabled = channel_direction["active"]
 			else:
 				channel.dir1_enabled = channel_direction["active"]
@@ -115,18 +112,14 @@ def ln_multigraph_to_hop_graph(ln_multigraph):
 	for n1, n2, k, d in ln_multigraph.edges(keys=True, data=True):
 		multi_edge = ln_multigraph[n1][n2]
 		cids = [cid for cid in multi_edge]
-		capacities = []
-		e_dir0 = []
-		e_dir1 = []
-		for i,cid in enumerate(cids):
+		capacities, e_dir0, e_dir1 = [], [], []
+		for i, cid in enumerate(cids):
 			capacities.append(multi_edge[cid]["capacity"])
 			if multi_edge[cid]["dir0_enabled"]:
 				e_dir0.append(i)
 			if multi_edge[cid]["dir1_enabled"]:
 				e_dir1.append(i)
-		hop = Hop(capacities, e_dir0, e_dir1)
-		#print(hop)
-		hop_graph[n1][n2]["hop"] = hop
+		hop_graph[n1][n2]["hop"] = Hop(capacities, e_dir0, e_dir1)
 	return hop_graph
 
 	

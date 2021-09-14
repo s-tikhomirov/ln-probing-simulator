@@ -7,7 +7,7 @@
 	Generation of synthetic hops and their (direct) probing.
 '''
 
-import random
+from random import random, randint
 
 from hop import Hop, dir0, dir1
 
@@ -27,19 +27,19 @@ def generate_hop(min_N, max_N, min_capacity, max_capacity, probability_bidirecti
 		Return:
 		- a Hop instance
 	'''
-	N = random.randint(min_N, max_N)
-	capacities = [random.randint(min_capacity, max_capacity) for _ in range(N)]
+	N = randint(min_N, max_N)
+	capacities = [randint(min_capacity, max_capacity) for _ in range(N)]
 	# avoid generating hops disabled in both directions (we can't probe them anyway)
 	hop_enabled_in_one_direction = False
 	while not hop_enabled_in_one_direction:
 		enabled_dir0, enabled_dir1 = [], []
 		for i in range(N):
-			is_bidirectional = random.random() < probability_bidirectional
+			is_bidirectional = random() < probability_bidirectional
 			if is_bidirectional:
 				enabled_dir0.append(i)
 				enabled_dir1.append(i)
 			else:
-				if random.random() < 0.5:
+				if random() < 0.5:
 					enabled_dir0.append(i)
 				else:
 					enabled_dir1.append(i)

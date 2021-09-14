@@ -9,8 +9,9 @@
 
 from rectangle import ProbingRectangle, Rectangle
 
-import random
+from itertools import product
 from math import log2
+from random import randrange
 
 # We encode channel direction as a boolean.
 # Direction 0 is from the alphanumerically lower node ID to the higher, direction 1 is the opposite.
@@ -22,6 +23,7 @@ class Hop:
 	def __init__(self, capacities, e_dir0, e_dir1, balances=None, granularity=1):
 		'''
 			Initialize a hop.
+
 			Parameters:
 			- capacities: a list of capacities
 			- e_dir0: a list of indices of channels enabled in dir0
@@ -44,7 +46,7 @@ class Hop:
 			self.b = balances
 		else:
 			# for each channel, pick a balance randomly between zero and capacity
-			self.b = [random.randrange(self.c[i]) for i in range(self.N)]
+			self.b = [randrange(self.c[i]) for i in range(self.N)]
 		# h is how much a hop can forward in dir0, if no channels are jammed
 		self.h = max([b for i,b in enumerate(self.b) if i in self.e[dir0]]) if self.can_forward(dir0) else 0
 		# g is how much a hop can forward in dir1, if no channels are jammed
@@ -94,7 +96,7 @@ class Hop:
 
 	def get_corner_points(self):
 		'''
-			Get the corner points of R_u_u that are not yet excluded fro F.
+			Get the corner points of R_u_u that are not yet excluded from F.
 			We could similarly get all points, but it's very slow.
 			We use this as a shortcut to stop probing when only one point remains.
 
@@ -107,7 +109,6 @@ class Hop:
 		ranges = [[R_u_u.l_vertex[i], R_u_u.u_vertex[i]] for i in range(len(R_u_u.l_vertex))]
 		points = []
 		points_left = self.S_F
-		from itertools import product
 		for p in product(*ranges):
 			if not R_u_l.contains_point(p) and not R_l_u.contains_point(p):
 				points.append(p)
@@ -122,7 +123,7 @@ class Hop:
 			Hop is defined by the current bounds (h_l, h_u, g_l, g_u).
 			Rectangle-related properties are fully determined by these bounds.
 			We set these properties here.
-			This function must be called after every bound update (such as a probe).
+			This function MUST be called after every bound update (such as a probe).
 
 			A ProbingRectangle has one corner either at (0, ..., 0) or at (c_1, ..., c_N).
 			This holds only for hop-level bounds (obtained without probing),
@@ -158,11 +159,11 @@ class Hop:
 	def reset_estimates(self):
 		'''
 			Set all variable hop parameters to their initial values.
-			Must be called on initialization and before running repeated probing on the same hops.
+			MUST be called on hop initialization and before running repeated probing on the same hops.
 		'''
 		self.h_l = -1
 		self.g_l = -1
-		# NB: setting upper bound to max(self.c) (and not 0) is correct from the rectangle theory viewpoint
+		# NB: setting upper bound to max(self.c) (and not 0) if hop can't forward is correct from the rectangle theory viewpoint
 		self.h_u = max([c for (i,c) in enumerate(self.c) if i in self.e[dir0]]) if self.can_forward(dir0) else max(self.c)
 		self.g_u = max([c for (i,c) in enumerate(self.c) if i in self.e[dir1]]) if self.can_forward(dir1) else max(self.c)
 		self.b_l = [-1] * self.N
@@ -198,8 +199,7 @@ class Hop:
 
 	def effective_vertex(self, direction, bound):
 		'''
-			The coordinate of the _effective vertex_ corresponding to bound in direction
-			is determined by:
+			The coordinate of the _effective vertex_ corresponding to bound in direction is determined by:
 
 			* the bound itself (bound = amount - 1);
 			* if the i-th channel is enabled;
@@ -223,9 +223,9 @@ class Hop:
 		'''
 		def effective_bound(bound, ch_i):
 			# We're intentionally not accounting for jamming here.
-			# h and g are "permanent" hop properties, assuming all channels unjammed
-			# for single-channel hops, h / g bounds are not independent
-			# hence, it is sufficient for channel to be enabled in one direction
+			# h and g are "permanent" hop properties, assuming all channels unjammed.
+			# For single-channel hops, h / g bounds are not independent.
+			# Hence, it is sufficient for channel to be enabled in one direction.
 			if (ch_i in self.e[direction] or self.N == 1 or bound < 0) and bound <= self.c[ch_i]:
 				eff_bound = bound
 			else:
@@ -247,7 +247,7 @@ class Hop:
 
 			We use this function to calculate both:
 			- the _actual_ S(F) (using the current rectangles from self. as arguments)
-			- the _potential_ S(F) if we do a probe with amount a (when doing binary search for the optimal a)
+			- the _potential_ S(F) if we do a probe with amount a (when doing binary search for NBS amount selection)
 
 			Parameters:
 			- R_h_l: a rectangle defining the     strict lower bound on h
@@ -264,14 +264,13 @@ class Hop:
 
 			The points in S_F are all possible positions of the true balances B.
 
-			Addition after jamming: we intersect all of involved rectangles with a new rectangle: R_b.
+			If jamming is used, we additionally intersect all rectangles with R_b.
 			R_b reflects our current knowledge about individual balance bounds.
 			
 		'''
 		# Theoretically, we could intersect the final F with R_b,
 		# but we can't do it easily because F may not be a rectangle.
-		# Instead, we first intersect the four rectangles with R_b, and then derive F.
-		# The end result is the same.
+		# Instead, we first intersect all four rectangles with R_b, and then derive F as usual.
 		R_u_u = R_h_u.intersect_with(R_g_u).intersect_with(R_b)
 		R_u_l = R_h_u.intersect_with(R_g_l).intersect_with(R_b)
 		R_l_u = R_h_l.intersect_with(R_g_u).intersect_with(R_b)
@@ -300,10 +299,10 @@ class Hop:
 			Calculate the _potential_ S(F) if we the probe of amount a fails ("area under the cut").
 			
 			Parameters:
-			- direction: True if dir0, else False
+			- direction: probe direction (dir0 / dir1)
 			- a: the probe amount
 
-			Return: S_F_a: the number of points in S(F) if we do a probe of amount a and it fails.
+			Return: S_F_a: the number of points in S(F) "under the cut".
 		'''
 		new_b_l = [0] * len(self.b_l)
 		new_b_u = self.c.copy()
@@ -331,12 +330,12 @@ class Hop:
 
 
 	def worth_probing_h(self):
-		# is there any uncertainty left about h and can we resolve it without jamming
+		# is there any uncertainty left about h that we resolve it without jamming?
 		return self.can_forward(dir0) and self.h_u - self.h_l > 1
 	
 
 	def worth_probing_g(self):
-		# is there any uncertainty left about g and can we resolve it without jamming
+		# is there any uncertainty left about g that we resolve it without jamming?
 		return self.can_forward(dir1) and self.g_u - self.g_l > 1
 
 
@@ -345,30 +344,30 @@ class Hop:
 
 
 	def worth_probing_channel(self, i):
-		# is it worth doing jamming-enhanced probing on this channel
+		# is it worth doing jamming-enhanced probing on this channel?
 		return self.b_u[i] - self.b_l[i] > 1 and (self.can_forward(dir0) or self.can_forward(dir1))
 
 
 	def worth_probing(self):
-		# is there any uncertainty left in the hop
+		# is there any uncertainty left in the hop?
 		return self.uncertainty > 0
 
 
-	def next_a(self, direction, naive, jamming):
+	def next_a(self, direction, bs, jamming):
 		'''
-			Calculate the optimal amount for probe in direction.
-			The optimal amount shrinks S(F) by half.
+			Calculate the optimal (NBS) amount for probe in direction.
+			The NBS amount shrinks S(F) by half.
 			(In other words, the probe leaves S_F/2 under the cut.)
-			We look for the optimal amount a using binary search:
+			We look for the NBS amount a using binary search:
 			starting from the current bounds in the required direction, we choose a in the middle.
 			We then check the area under the cut _if_ we probed with this amount.
 			Depending on if S_F_a < S_F or S_F_a > S_F, we increase / decrease a.
 
 			Parameters:
-			- direction: True for dir0, False for dir1
+			- direction: dir0 or dir1
 
 			Return:
-			- a: the optimal amount, or None if the hop cannot forward in this direction
+			- a: the NBS amount, or None if the hop cannot forward in this direction
 		'''
 		S_F_half = max(1, self.S_F // 2)
 		if not jamming:
@@ -381,9 +380,7 @@ class Hop:
 			i = available_channels[0]
 			a_l, a_u = (self.b_l[i] + 1, self.b_u[i]) if direction == dir0 else (self.c[i] - self.b_u[i], self.c[i] - self.b_l[i] - 1)
 		a = (a_l + a_u + 1) // 2
-		#print(a_l, a, a_u)
-		#print("Naive = ", naive)
-		if not naive and not jamming:
+		if not bs and not jamming:
 			# we only do binary search over S(F) in pre-jamming probing phase
 			while True:
 				S_F_a = self.S_F_a_expected(direction, a)
@@ -401,14 +398,14 @@ class Hop:
 		return a
 
 
-	def next_dir(self, naive, jamming, prefer_small_amounts=False, threshold_area_difference=0.1):
+	def next_dir(self, bs, jamming, prefer_small_amounts=False, threshold_area_difference=0.1):
 		'''
-			Suggest the optimal direction for the next probe.
+			Suggest the NBS direction for the next probe.
 
 			Parameters:
-			- naive: True if we do binary search only amounts; False if we use optimal amount choice (binary search over S(F))
+			- bs: True if we do binary search only amounts; False if we use NBS amount choice
 			- jamming: are we doing jamming-enhanced probing after regular probing
-			- prefer_small_amounts: prioritize small amounts vs cutting S(F) more precisely
+			- prefer_small_amounts: prioritize small amounts vs cutting S(F) in half more precisely
 			- threshold_area_difference: the difference in S(F) that we neglect when choosing between two amounts
 
 			Return:
@@ -422,9 +419,9 @@ class Hop:
 		elif not should_consider_dir1:
 			chosen_dir = dir0
 		else:
-			a_dir0 = self.next_a(dir0, naive, jamming)
-			a_dir1 = self.next_a(dir1, naive, jamming)
-			if naive or prefer_small_amounts:
+			a_dir0 = self.next_a(dir0, bs, jamming)
+			a_dir1 = self.next_a(dir1, bs, jamming)
+			if bs or prefer_small_amounts:
 				# choose smaller amount: more likely to pass
 				chosen_dir = dir0 if a_dir0 < a_dir1 else dir1
 			else:

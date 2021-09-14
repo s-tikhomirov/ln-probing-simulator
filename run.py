@@ -7,11 +7,11 @@
 import argparse
 import time
 
-from experiments import experiment_1, experiment_2, experiment_3
+from experiments import experiment_1, experiment_2
 from prober import Prober
 
 
-SNAPSHOT_FILENAME = "./snapshot/listchannels-2021-05-23.json"
+SNAPSHOT_FILENAME = "./snapshots/listchannels-2021-09-09.json"
 ENTRY_CHANNEL_CAPACITY = 10*100*1000*1000
 # top 10 nodes by degree as per https://1ml.com/node?order=channelcount
 ENTRY_NODES = [
@@ -34,10 +34,12 @@ def main():
 		help="The number of target hops per experiment run.")
 	parser.add_argument("--num_runs_per_experiment", default=10, type=int,
 		help="Run the same experiment this many times (results are averaged).")
-	parser.add_argument("--max_num_channels", default=10, type=int,
+	parser.add_argument("--min_num_channels", default=1, type=int,
+		help="Consider target hops with the number of channels from this number.")
+	parser.add_argument("--max_num_channels", default=5, type=int,
 		help="Consider target hops with the number of channels up to this number.")
 	parser.add_argument("--use_snapshot", dest="use_snapshot", action="store_true",
-		help="Pick target hops from snapshot? (Then do both isolated and snapshot probing.)")
+		help="Pick target hops from snapshot? (Then do both direct and remote probing.)")
 	parser.add_argument("--jamming", dest="jamming", action="store_true",
 		help="Use jamming after h and g are known?")
 	args = parser.parse_args()
@@ -51,9 +53,9 @@ def main():
 	if prober:
 		prober.analyze_graph()
 
-	experiment_1(prober, args.num_target_hops, args.num_runs_per_experiment, args.max_num_channels, args.use_snapshot, args.jamming)
+	experiment_1(prober, args.num_target_hops, args.num_runs_per_experiment, 
+		args.min_num_channels, args.max_num_channels, args.use_snapshot, args.jamming)
 	experiment_2(args.num_target_hops, args.num_runs_per_experiment)
-	experiment_3(args.num_target_hops, args.num_runs_per_experiment, max_ratio=10)	
 
 
 if __name__ == "__main__":

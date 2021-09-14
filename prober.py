@@ -12,7 +12,7 @@ from hop import Hop, dir0, dir1
 from graph import create_multigraph_from_snapshot, ln_multigraph_to_hop_graph
 
 import networkx as nx
-import random
+from random import random, shuffle
 
 
 class Prober:
@@ -29,6 +29,8 @@ class Prober:
 			- granularity: the prober wants to know balance up to this granularity (in satoshis)
 		'''
 		self.our_node_id = node_id
+		# parse snapshot date from filename to include in plot title
+		self.snapshot_date = snapshot_filename[-len("yyyy-mm-dd.json"):-len(".json")]
 		ln_multigraph = create_multigraph_from_snapshot(snapshot_filename)
 		self.lnhopgraph = ln_multigraph_to_hop_graph(ln_multigraph)
 		for entry_node in entry_nodes:
@@ -97,7 +99,6 @@ class Prober:
 				return hop.can_forward(dir0) and amount <= hop.h_u
 			else:
 				return hop.can_forward(dir1) and amount <= hop.g_u
-
 		def filter_node(n):
 			'''
 				Return True if the node is kept, False if it is excluded.
@@ -151,7 +152,7 @@ class Prober:
 
 	def issue_probe_along_path(self, path, amount):
 		'''
-			Simulate sending a probe along a path and observing the result.
+			Send a probe along a path and observe the result.
 
 			Parameters:
 			- path: a list of node pairs defining a path
@@ -167,7 +168,6 @@ class Prober:
 		reached_target = False
 		for n1, n2 in node_pairs:
 			reached_target = n2 == path[-1]
-			#print("----probing intermediary? hop between", n1, "and", n2)
 			hop = self.lnhopgraph[n1][n2]["hop"]
 			direction = dir0 if n1 < n2 else dir1
 			probe_passed = hop.probe(direction, amount)
@@ -177,13 +177,13 @@ class Prober:
 		return reached_target
 
 
-	def probe_hop(self, target_node_pair, naive, jamming, max_failed_probes_per_hop=20, best_dir_chance=0.75):
+	def probe_hop(self, target_node_pair, bs, jamming, max_failed_probes_per_hop=10, best_dir_chance=0.75):
 		'''
 			Probe a given target hop (in general, with multiple probes along different paths).
 
 			Parameters:
 			- target_node_pair: a pair of node IDs defining the target hop
-			- naive: specify probe amount choice method
+			- bs: specify probe amount choice method
 			- jamming: use jamming-enhanced probing after "regular" probing
 			- max_failed_probes_per_hop: stop probing the hop is this many probes didn't reach it
 			- best_dir_chance: choosing between two possible directions, flip a coin biased in favor of "best" direction
@@ -194,7 +194,8 @@ class Prober:
 		'''
 		target_hop = self.lnhopgraph[target_node_pair[0]][target_node_pair[1]]["hop"]
 		known_failed_amount = {dir0: None, dir1: None}
-		print("\n----------------------\nProbing hop", target_node_pair)
+		#print("\n----------------------\nProbing hop", target_node_pair)
+		#print(target_hop)
 		def probe_target_hop_in_direction(direction, jamming):
 			'''
 				Probe the target hop in a given direction, with or without jamming.
@@ -205,7 +206,7 @@ class Prober:
 			'''
 			made_probe, reached_target = False, False
 			if target_hop.worth_probing() if jamming else target_hop.worth_probing_h_or_g(direction):
-				amount = target_hop.next_a(direction, naive, jamming)
+				amount = target_hop.next_a(direction, bs, jamming)
 				#print("Suggest amount", amount)
 				guaranteed_fail = amount >= known_failed_amount[direction] if known_failed_amount[direction] is not None else False
 				if not guaranteed_fail:
@@ -221,15 +222,15 @@ class Prober:
 						#print("Path iteration stopped for direction", "dir0" if direction else "dir1", ", amount:", amount)
 						known_failed_amount[direction] = amount
 				else:
-					print("Will not probe: we know optimal amount will fail")
+					#print("Will not probe: we know NBS amount will fail")
 					pass
 			else:
-				print("Not worth probing")
+				#print("Not worth probing")
 				pass
 			return made_probe, reached_target
 		def choose_dir_amount_and_probe(jamming):
 			'''
-				Choose the optimal probing direction and amount and probe it (with multiple probes).
+				Choose the NBS probing direction and amount and probe it (with multiple probes).
 
 				Parameters:
 				- jamming: True if we're jamming
@@ -237,7 +238,7 @@ class Prober:
 			#print("choose_dir_amount_and_probe: jamming = ", jamming)
 			num_probes = 0
 			# this is the suggested (best) direction
-			best_dir = target_hop.next_dir(naive, jamming)
+			best_dir = target_hop.next_dir(bs, jamming)
 			if jamming:
 				available_channels_alt_dir = [i for i in target_hop.e[not best_dir] if i not in target_hop.j[not best_dir]]
 				if len(available_channels_alt_dir) == 0:
@@ -250,6 +251,7 @@ class Prober:
 			#print("Preferred direction:", "dir0" if best_dir else "dir1")
 			made_probe, reached_target = False, False
 			did_probes, first_attempt = 0, True
+			num_probes_failed = 0
 			while not reached_target and did_probes < max_failed_probes_per_hop:
 				#print("reached_target = ", reached_target)
 				#print("did_probes = ", did_probes)
@@ -281,19 +283,23 @@ class Prober:
 						else:
 							# can probe in either of two directions
 							# choose with coin flip biased in favor of best direction
-							direction = best_dir if random.random() < best_dir_chance else alt_dir
+							direction = best_dir if random() < best_dir_chance else alt_dir
 				made_probe, reached_target = probe_target_hop_in_direction(direction, jamming)
+				if not reached_target:
+					num_probes_failed += 1
 				if made_probe:
 					did_probes += 1
 			num_probes += did_probes
 			if not reached_target:
-				print("Cannot reach target hop after", num_probes, "probes")
+				#print("Cannot reach target hop after", num_probes, "probes")
 				#print(target_node_pair, target_hop)
-			return num_probes, reached_target
-		total_num_probes = 0
+				pass
+			return num_probes, reached_target, num_probes_failed
+		total_num_probes, total_num_probes_failed = 0, 0
 		while target_hop.worth_probing_h() or target_hop.worth_probing_g():
-			num_probes, reached_target = choose_dir_amount_and_probe(jamming=False)
+			num_probes, reached_target, probes_failed = choose_dir_amount_and_probe(jamming=False)
 			total_num_probes += num_probes
+			total_num_probes_failed += probes_failed
 			if not reached_target:
 				break
 			else:
@@ -307,7 +313,7 @@ class Prober:
 				total_num_probes += target_hop.jam_all_except_in_direction(i, dir0)
 				total_num_probes += target_hop.jam_all_except_in_direction(i, dir1)
 				while target_hop.worth_probing_channel(i):
-					num_probes, reached_target = choose_dir_amount_and_probe(jamming=True)
+					num_probes, reached_target, num_probes_failed = choose_dir_amount_and_probe(jamming=True)
 					total_num_probes += num_probes
 					if not reached_target:
 						break
@@ -315,27 +321,28 @@ class Prober:
 						#print("Probed successfully with jamming.")
 						pass
 			target_hop.unjam_all()
+		#print("Path failed", total_num_probes_failed, "times.")
 		return total_num_probes
 
 
-	def probe_hops(self, target_hops, naive, jamming):
+	def probe_hops(self, target_hops, bs, jamming):
 		'''
 			Probe a list of target hops afresh.
 
 			Parameters:
 			- target_hops: a list of target hops
-			- naive: probe amount choice method
+			- bs: probe amount choice method
 			- jamming: True if use jamming-enhanced probing after "regular" probing
 
 			Return:
 			- total_gain: total achieved informatoin gain on target hops
-			- probing speed: average probing speed (bit / probe) on target hops
+			- probing speed: average probing speed (bit / message) on target hops
 		'''
 		self.reset_all_estimates()
 		def uncertainty_for_target_hops():
 			return sum([self.lnhopgraph[n1][n2]["hop"].uncertainty for n1, n2 in target_hops])
 		initial_uncertainty_total = uncertainty_for_target_hops()
-		num_probes = sum([self.probe_hop(target_hop, naive, jamming) for target_hop in target_hops])
+		num_probes = sum([self.probe_hop(target_hop, bs, jamming) for target_hop in target_hops])
 		final_uncertainty_total = uncertainty_for_target_hops()
 		total_gain_bits = initial_uncertainty_total - final_uncertainty_total
 		probing_speed = total_gain_bits / num_probes
@@ -360,10 +367,10 @@ class Prober:
 
 			Return: a list of target hops
 		'''
-		# we only choose targets that are enabled in at least one directions
+		# we only choose targets that are enabled in at least one direction
 		potential_target_hops = [(u,v) for u,v,e in self.lnhopgraph.edges(data=True) if (
 			e["hop"].N == num_channels and (e["hop"].can_forward(dir0) or e["hop"].can_forward(dir1)))]
-		random.shuffle(potential_target_hops)
+		shuffle(potential_target_hops)
 		return potential_target_hops[:max_num_target_hops]
 
 
@@ -371,12 +378,12 @@ class Prober:
 		'''
 			Calculate some stats about capacity and structure of hops in the snapshot.
 		'''
-		print("Analyzing graph")
+		print("\nAnalyzing graph")
 		all_hops = [self.lnhopgraph.get_edge_data(n1,n2)["hop"] for (n1, n2) in self.lnhopgraph.edges()]
 		def n_channel_hops(all_hops, min_N, max_N):
 			return [hop for hop in all_hops if min_N <= hop.N <= max_N]
 		def share_n_channel_hops(all_hops, min_N, max_N):
-			return len(n_channel_hops(all_hops, min_N, max_N)) / len(all_hops)
+			return round(len(n_channel_hops(all_hops, min_N, max_N)) / len(all_hops), 4)
 		def capacity(hop):
 			return sum(hop.c)
 		channels_in_hops = [hop.N for hop in all_hops]
@@ -386,7 +393,8 @@ class Prober:
 		#share_capacity_in_hops = [c / total_capacity for c in capacity_in_hops]
 		def share_total_capacity_in_n_hops(all_hops, min_N, max_N, total_capacity):
 			hops = n_channel_hops(all_hops, min_N, max_N)
-			return sum([capacity(hop) for hop in hops]) / total_capacity
+			return round(sum([capacity(hop) for hop in hops]) / total_capacity, 4)
+		print("Total capacity (BTC):", round(total_capacity / (100*1000*1000), 4))
 		print("Maximal number of channels in a hop:", max(channels_in_hops))
 		print("Share of 1-channel hops:", 		share_n_channel_hops(all_hops, 1, 1))
 		print("Share of 2-channel hops:", 		share_n_channel_hops(all_hops, 2, 2))

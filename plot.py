@@ -31,7 +31,7 @@ def plot(x_data, y_data_list, x_label, y_label, title, filename, extension=".png
 	LABELSIZE = 20
 	LEGENDSIZE = 18
 	TICKSIZE = 18
-	FIGSIZE = (12,7)
+	FIGSIZE = (12,9)
 	#linestyles = ['-', '--', '-.', ':']
 	plt.figure(figsize=FIGSIZE)
 	for data in y_data_list:
@@ -57,7 +57,7 @@ def plot(x_data, y_data_list, x_label, y_label, title, filename, extension=".png
 	#plt.tight_layout()
 	plt.tick_params(axis='x', labelsize=TICKSIZE)
 	plt.tick_params(axis='y', labelsize=TICKSIZE)
-	plt.legend(fontsize=LEGENDSIZE)#, loc='best', bbox_to_anchor=(0.5, 0., 0.5, 0.5))
+	plt.legend(fontsize=LEGENDSIZE, loc='lower left')
 	plt.title(title, fontsize=LABELSIZE)
 	path = os.path.join(SAVE_RESULTS_TO, filename + extension)
 	plt.savefig(path)
