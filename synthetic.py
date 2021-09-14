@@ -4,7 +4,7 @@
 # Developed by Sergei Tikhomirov (sergey.s.tikhomirov@gmail.com), SnT Cryptolux group.
 
 '''
-	Generation and probing of isolated hops.
+	Generation of synthetic hops and their (direct) probing.
 '''
 
 import random
@@ -65,13 +65,13 @@ def generate_hops(num_target_hops, N, min_capacity, max_capacity, probability_bi
 	return [generate_hop(N, N, min_capacity, max_capacity, probability_bidirectional) for _ in range(num_target_hops)]
 
 
-def probe_single_hop(hop, naive, jamming):
+def probe_single_hop(hop, bs, jamming):
 	'''
-		Do a series of isolated probes until the hop is fully probed.
+		Do a series of (direct) probes until the hop is fully probed.
 
 		Parameters:
 		- hop: the target hop
-		- naive: amount choice method
+		- bs: amount choice method
 		- jamming: do jamming-enhanced probing after h and g are fully probed
 
 		Return:
@@ -80,7 +80,7 @@ def probe_single_hop(hop, naive, jamming):
 		- num_jams: the total number of jams done
 	'''
 	initial_uncertainty = hop.uncertainty
-	num_probes, num_jams = probe_hop_without_jamming(hop, naive), 0
+	num_probes, num_jams = probe_hop_without_jamming(hop, bs), 0
 	if jamming:
 		for i in range(hop.N):
 			#print("\nJamming-enhanced probing channel", i)
@@ -89,7 +89,7 @@ def probe_single_hop(hop, naive, jamming):
 			# TODO: can we jam in one direction only? (fewer jams)
 			num_jams += hop.jam_all_except_in_direction(i, direction = dir0)
 			num_jams += hop.jam_all_except_in_direction(i, direction = dir1)
-			num_probes_i, num_jams_i = jam_hop_and_probe_single_channel(hop, naive, i)
+			num_probes_i, num_jams_i = jam_hop_and_probe_single_channel(hop, bs, i)
 			num_probes += num_probes_i
 			num_jams += num_jams_i
 	hop.unjam_all()
@@ -99,36 +99,36 @@ def probe_single_hop(hop, naive, jamming):
 	return gain, num_probes, num_jams
 
 
-def probe_hop_without_jamming(hop, naive):
+def probe_hop_without_jamming(hop, bs):
 	'''
 		Probe a hop without jamming.
 
 		Parameters:
 		- hop: the target hop
-		- naive: amount choice method
+		- bs: amount choice method
 
 		Return:
 		- num_probes: the total number of probes done
 	'''
 	num_probes = 0
 	while hop.worth_probing_h() or hop.worth_probing_g():
-		chosen_dir = hop.next_dir(naive, jamming=False)
+		chosen_dir = hop.next_dir(bs, jamming=False)
 		if chosen_dir is None:
 			print("Hop is disabled in both directions, cannot probe")
 			break
-		amount = hop.next_a(chosen_dir, naive, jamming=False)
+		amount = hop.next_a(chosen_dir, bs, jamming=False)
 		hop.probe(chosen_dir, amount)
 		num_probes += 1
 	return num_probes
 
 
-def jam_hop_and_probe_single_channel(hop, naive, i):
+def jam_hop_and_probe_single_channel(hop, bs, i):
 	'''
 		Jam all channels in a hop except one and go jamming-enhanced probing.
 
 		Parameters:
 		- hop: the target hop
-		- naive: amount choice method
+		- bs: amount choice method
 		- i: the index of the channel to leave unjammed
 
 		Return:
@@ -137,23 +137,23 @@ def jam_hop_and_probe_single_channel(hop, naive, i):
 	'''
 	num_probes, num_jams = 0, 0
 	while hop.worth_probing_channel(i):
-		chosen_dir = hop.next_dir(naive, jamming=True)
+		chosen_dir = hop.next_dir(bs, jamming=True)
 		if chosen_dir is None:
 			print("Hop is disabled in both directions, cannot probe")
 			break
-		amount = hop.next_a(chosen_dir, naive, jamming=True)
+		amount = hop.next_a(chosen_dir, bs, jamming=True)
 		hop.probe(chosen_dir, amount)
 		num_probes += 1
 	return num_probes, num_jams
 
 
-def probe_hops_isolated(hops, naive, jamming):
+def probe_hops_direct(hops, bs, jamming):
 	'''
 		Probe each hop from a list of hops.
 
 		Parameters:
 		- hops: a list of target hops
-		- naive: amount choice method
+		- bs: amount choice method
 		- jamming: do jamming-enhanced probing after h and g are fully probed
 
 		Return:
@@ -165,11 +165,11 @@ def probe_hops_isolated(hops, naive, jamming):
 	initial_uncertainty_total = sum([hop.uncertainty for hop in hops])
 	gains, probes_list = [], []
 	for hop in hops:
-		gain, probes, jams = probe_single_hop(hop, naive=naive, jamming=jamming)
+		gain, probes, jams = probe_single_hop(hop, bs=bs, jamming=jamming)
 		gains.append(gain)
 		# count jams as probes (they are payments too!)
 		probes_list.append(probes + jams)
-	#print("\nProbed with method:", "naive" if naive else "optimal", "with jamming" if jamming else "without jamming")
+	#print("\nProbed with method:", "bs" if bs else "nbs", "with jamming" if jamming else "without jamming")
 	final_uncertainty_total = sum([hop.uncertainty for hop in hops])
 	#print("Final uncertainty:", final_uncertainty_total)
 	#print("Total gain:		", round(sum(gains),2), "after", sum(probes_list), "probes")
