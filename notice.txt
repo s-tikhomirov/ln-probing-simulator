@@ -1,0 +1,8 @@
+Lightning Network Probing Simulator (LNPS) is © 2020-2021 University of Luxembourg
+and is distributed under the MIT license (read LICENSE for details)
+
+Authors:
+  - Sergei Tikhomirov (sergey.s.tikhomirov@gmail.com)
+
+Paper:
+  - A. Biryukov, G. Naumenko, S. Tikhomirov. ""Analysis and Probing of Parallel Channels in the Lightning Network", ePrint, 2021
