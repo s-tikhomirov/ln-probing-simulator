@@ -122,20 +122,20 @@ def experiment_1(prober, num_target_hops, num_runs_per_experiment,
 			speed_nbs_snapshot[i]	= speed_list_nbs_snapshot
 	# prepare data for information gains plot
 	y_data_gains_plot = [
-		(gains_nbs_synthetic,	"Direct probing (NBS = BS)","--",	"blue"),
-		(gains_nbs_snapshot,	"Remote probing, NBS",		"-",	"green"),
-		(gains_bs_snapshot,		"Remote probing, BS",		"-",	"red"), 
+		(gains_nbs_synthetic,	"Direct probing (NBS = BS)","-",	"blue"),
+		(gains_nbs_snapshot,	"Remote probing, NBS",		"-.",	"green"),
+		(gains_bs_snapshot,		"Remote probing, BS",		":",	"red"), 
 		] if use_snapshot else [
-		(gains_nbs_synthetic,	"Direct probing (NBS = BS)","--",	"blue")
+		(gains_nbs_synthetic,	"Direct probing (NBS = BS)","-",	"blue")
 		]
 	# prepare data for probing speeds plot
 	y_data_speed_plot = [
-		(speed_nbs_synthetic,	"Direct probing, NBS",	"--",	"green"),
+		(speed_nbs_synthetic,	"Direct probing, NBS",	"-",	"green"),
 		(speed_bs_synthetic,	"Direct probing, BS", 	"--",	"red"),
-		(speed_nbs_snapshot,	"Remote probing, NBS",	"-",	"green"),
-		(speed_bs_snapshot,		"Remote probing, BS",	"-",	"red"),
+		(speed_nbs_snapshot,	"Remote probing, NBS",	"-.",	"green"),
+		(speed_bs_snapshot,		"Remote probing, BS",	":",	"red"),
 		] if use_snapshot else [
-		(speed_nbs_synthetic,	"Direct probing, NBS",	"--",	"green"),
+		(speed_nbs_synthetic,	"Direct probing, NBS",	"-",	"green"),
 		(speed_bs_synthetic,	"Direct probing, BS", 	"--",	"red"),
 		]
 	comment = ("Runs per experiment: " + str(num_runs_per_experiment) + 
