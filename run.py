@@ -35,7 +35,7 @@ from experiments import experiment_1, experiment_2
 from prober import Prober
 
 
-SNAPSHOT_FILENAME = "./snapshots/listchannels-2021-09-09.json"
+SNAPSHOT_FILENAME = "./snapshots/listchannels-2021-12-09.json"
 ENTRY_CHANNEL_CAPACITY = 10*100*1000*1000
 # top 10 nodes by degree as per https://1ml.com/node?order=channelcount
 ENTRY_NODES = [
@@ -50,7 +50,8 @@ ENTRY_NODES = [
 "0395033b252c6f40e3756984162d68174e2bd8060a129c0d3462a9370471c6d28f",
 "0390b5d4492dc2f5318e5233ab2cebf6d48914881a33ef6a9c6bcdbb433ad986d0"
 ]
-
+# very high-dimensional hops are rare in snapshots - too few to run experiments on
+MAX_MAX_NUM_CHANNELS = 5
 
 def main():
 	parser = argparse.ArgumentParser()
@@ -64,11 +65,11 @@ def main():
 		help="Consider target hops with the number of channels up to this number.")
 	parser.add_argument("--use_snapshot", dest="use_snapshot", action="store_true",
 		help="Pick target hops from snapshot? (Then do both direct and remote probing.)")
-	parser.add_argument("--jamming", dest="jamming", action="store_true",
-		help="Use jamming after h and g are known?")
+	#parser.add_argument("--jamming", dest="jamming", action="store_true",
+	#	help="Use jamming after h and g are known?")
 	args = parser.parse_args()
 
-	if args.use_snapshot and args.max_num_channels > 5:
+	if args.use_snapshot and args.max_num_channels > MAX_MAX_NUM_CHANNELS:
 		print("Too high max_num_channels: snapshot doesn't have that many hops with that many channels.")
 		exit()
 
@@ -78,7 +79,7 @@ def main():
 		prober.analyze_graph()
 
 	experiment_1(prober, args.num_target_hops, args.num_runs_per_experiment, 
-		args.min_num_channels, args.max_num_channels, args.use_snapshot, args.jamming)
+		args.min_num_channels, args.max_num_channels)#, args.use_snapshot, args.jamming)
 	experiment_2(args.num_target_hops, args.num_runs_per_experiment)
 
 

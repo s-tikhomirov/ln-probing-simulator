@@ -370,7 +370,11 @@ class Prober:
 		num_probes = sum([self.probe_hop(target_hop, bs, jamming) for target_hop in target_hops])
 		final_uncertainty_total = uncertainty_for_target_hops()
 		total_gain_bits = initial_uncertainty_total - final_uncertainty_total
-		probing_speed = total_gain_bits / num_probes
+		if num_probes == 0:
+			print("Did zero probes, can't calculate probing speed!")
+			probing_speed = 0
+		else:
+			probing_speed = total_gain_bits / num_probes
 		total_gain = total_gain_bits / initial_uncertainty_total
 		return total_gain, probing_speed
 
@@ -421,13 +425,13 @@ class Prober:
 			return round(sum([capacity(hop) for hop in hops]) / total_capacity, 4)
 		print("Total capacity (BTC):", round(total_capacity / (100*1000*1000), 4))
 		print("Maximal number of channels in a hop:", max(channels_in_hops))
-		print("Share of 1-channel hops:", 		share_n_channel_hops(all_hops, 1, 1))
-		print("Share of 2-channel hops:", 		share_n_channel_hops(all_hops, 2, 2))
-		print("Share of 3-channel hops:", 		share_n_channel_hops(all_hops, 3, 3))
-		print("Share of 4-channel hops:", 		share_n_channel_hops(all_hops, 4, 4))
-		print("Share of 5-channel hops:", 		share_n_channel_hops(all_hops, 5, 5))
-		print("Share of <= 5-channel hops:", 	share_n_channel_hops(all_hops, 1, 5))
-		print("Share of <= 10-channel hops:", 	share_n_channel_hops(all_hops, 1, 10))
+		print("Share of 1-channel hops:", 		share_n_channel_hops(all_hops, 1, 1), len(n_channel_hops(all_hops, 1, 1)))
+		print("Share of 2-channel hops:", 		share_n_channel_hops(all_hops, 2, 2), len(n_channel_hops(all_hops, 2, 2)))
+		print("Share of 3-channel hops:", 		share_n_channel_hops(all_hops, 3, 3), len(n_channel_hops(all_hops, 3, 3)))
+		print("Share of 4-channel hops:", 		share_n_channel_hops(all_hops, 4, 4), len(n_channel_hops(all_hops, 4, 4)))
+		print("Share of 5-channel hops:", 		share_n_channel_hops(all_hops, 5, 5), len(n_channel_hops(all_hops, 5, 5)))
+		print("Share of <= 5-channel hops:", 	share_n_channel_hops(all_hops, 1, 5), len(n_channel_hops(all_hops, 1, 5)))
+		print("Share of <= 10-channel hops:", 	share_n_channel_hops(all_hops, 1, 10), len(n_channel_hops(all_hops, 1, 10)))
 		print("Share of capacity in 1-channel hops:", share_total_capacity_in_n_hops(all_hops, 1, 1, total_capacity))
 		print("Share of capacity in 2-channel hops:", share_total_capacity_in_n_hops(all_hops, 2, 2, total_capacity))
 		print("Share of capacity in 3-channel hops:", share_total_capacity_in_n_hops(all_hops, 3, 3, total_capacity))

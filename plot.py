@@ -38,7 +38,7 @@ from matplotlib import pyplot as plt
 SAVE_RESULTS_TO = 'results'
 
 
-def plot(x_data, y_data_list, x_label, y_label, title, filename, extension=".png"):
+def plot(x_data, y_data_lists, x_label, y_label, title, filename, extension=None):
 	'''
 		Plot data and save a plot.
 
@@ -56,36 +56,47 @@ def plot(x_data, y_data_list, x_label, y_label, title, filename, extension=".png
 	LABELSIZE = 20
 	LEGENDSIZE = 18
 	TICKSIZE = 18
-	FIGSIZE = (12,9)
-	#linestyles = ['-', '--', '-.', ':']
-	plt.figure(figsize=FIGSIZE)
-	for data in y_data_list:
-		data_means = [statistics.mean(data_i) for data_i in data[0]]
-		data_stdevs = [statistics.stdev(data_i) if len(data_i) > 1 else 0 for data_i in data[0]]
-		linestyle = data[2] if data[2] else "-"
-		color = data[3] if data[3] else None
-		if color:
-			plt.errorbar(x_data, data_means,
-				yerr=data_stdevs,
-				fmt=linestyle,
-				color=data[3],
-				label=data[1])
-		else:
-			plt.errorbar(x_data, data_means,
-				yerr=data_stdevs,
-				fmt=linestyle,
-				label=data[1])
+	FIGSIZE = (14,8)
+	#assert(len(y_data_lists) == 2)
+	fig, (ax0, ax1) = plt.subplots(1, 2, figsize=FIGSIZE, sharex=True, sharey=True)
+	#fig.suptitle(title, fontsize=LABELSIZE)
+	fig.add_subplot(111, frameon=False)
+	# hide tick and tick label of the big axis
+	plt.tick_params(labelcolor='none', which='both', top=False, bottom=False, left=False, right=False)
 	plt.xlabel(x_label, fontsize=LABELSIZE)
 	plt.ylabel(y_label, fontsize=LABELSIZE)
-	plt.xlim([0, max(x_data) + 1])
-	plt.ylim([0, 1.1])
-	#plt.tight_layout()
-	plt.tick_params(axis='x', labelsize=TICKSIZE)
-	plt.tick_params(axis='y', labelsize=TICKSIZE)
-	plt.legend(fontsize=LEGENDSIZE, loc='lower left')
-	plt.title(title, fontsize=LABELSIZE)
-	path = os.path.join(SAVE_RESULTS_TO, filename + extension)
-	plt.savefig(path)
+	for i, ax in enumerate((ax0, ax1)):
+		for data in y_data_lists[i]:
+			data_means = [statistics.mean(data_i) for data_i in data[0]]
+			data_stdevs = [statistics.stdev(data_i) if len(data_i) > 1 else 0 for data_i in data[0]]
+			linestyle = data[2] if data[2] else "-"
+			color = data[3] if data[3] else None
+			if color:
+				ax.errorbar(x_data, data_means,
+					yerr=data_stdevs,
+					fmt=linestyle,
+					color=data[3],
+					label=data[1])
+			else:
+				ax.errorbar(x_data, data_means,
+					yerr=data_stdevs,
+					fmt=linestyle,
+					label=data[1])
+		ax.set_xlim([0, max(x_data) + 1])
+		ax.set_ylim([0, 1.1])
+		plt.tight_layout()
+		ax.set_xticks(x_data)
+		ax.set_yticks([0.0, 0.2, 0.4, 0.6, 0.8, 1.0])
+		ax.tick_params(axis='x', labelsize=TICKSIZE)
+		ax.tick_params(axis='y', labelsize=TICKSIZE)
+		ax.legend(fontsize=LEGENDSIZE, loc='lower left')
+		ax.set_title(["Non-enhanced\n", "Jamming-enhanced\n"][i], fontsize=LABELSIZE)
+	path = os.path.join(SAVE_RESULTS_TO, filename)
+	if extension is not None:
+		plt.savefig(path + extension)
+	else:
+		plt.savefig(path + ".pdf")
+		plt.savefig(path + ".png")
 	print("Results saved to", path)
 	plt.clf()
 

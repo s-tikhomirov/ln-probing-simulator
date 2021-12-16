@@ -39,8 +39,7 @@ from hop import Hop
 from plot import plot
 
 
-def experiment_1(prober, num_target_hops, num_runs_per_experiment, 
-	min_num_channels, max_num_channels, use_snapshot, jamming):
+def experiment_1(prober, num_target_hops, num_runs_per_experiment, min_num_channels, max_num_channels):
 	'''
 		Measure the information gain and probing speed for direct and remote probing.
 
@@ -63,7 +62,6 @@ def experiment_1(prober, num_target_hops, num_runs_per_experiment,
 	'''
 
 	print("\n\n**** Running experiment 1 ****")
-	assert(not use_snapshot or prober is not None)
 
 	BITCOIN = 100*1000*1000
 	MIN_CAPACITY_SYNTHETIC = 0.01 	* BITCOIN
@@ -71,95 +69,86 @@ def experiment_1(prober, num_target_hops, num_runs_per_experiment,
 	NUM_CHANNELS_IN_TARGET_HOPS = [n for n in range(min_num_channels, max_num_channels + 1)]
 	# Hops with 5+ channels are very rare in the snapshot.
 
-	gains_bs_synthetic 		= [0 for _ in range(len(NUM_CHANNELS_IN_TARGET_HOPS))]
-	gains_nbs_synthetic 	= [0 for _ in range(len(NUM_CHANNELS_IN_TARGET_HOPS))]
-	speed_bs_synthetic 		= [0 for _ in range(len(NUM_CHANNELS_IN_TARGET_HOPS))]
-	speed_nbs_synthetic 	= [0 for _ in range(len(NUM_CHANNELS_IN_TARGET_HOPS))]
-	gains_bs_snapshot 		= [0 for _ in range(len(NUM_CHANNELS_IN_TARGET_HOPS))]
-	gains_nbs_snapshot 		= [0 for _ in range(len(NUM_CHANNELS_IN_TARGET_HOPS))]
-	speed_bs_snapshot		= [0 for _ in range(len(NUM_CHANNELS_IN_TARGET_HOPS))]
-	speed_nbs_snapshot 		= [0 for _ in range(len(NUM_CHANNELS_IN_TARGET_HOPS))]
-
-	for i, num_channels in enumerate(NUM_CHANNELS_IN_TARGET_HOPS):
-		print("\n\nN = ", num_channels)
-		gain_list_bs_synthetic, gain_list_nbs_synthetic = [], []
-		speed_list_bs_synthetic, speed_list_nbs_synthetic = [], []
-		gain_list_bs_snapshot, gain_list_nbs_snapshot = [], []
-		speed_list_bs_snapshot, speed_list_nbs_snapshot = [], []
-		for num_experiment in range(num_runs_per_experiment):
-			print("  experiment", num_experiment)
-			if use_snapshot:
-				# pick target hops from snapshot, probe them in direct and remote modes
-				target_hops_node_pairs = prober.choose_target_hops_with_n_channels(num_target_hops, num_channels)
-				target_hops = [prober.lnhopgraph[u][v]["hop"] for (u,v) in target_hops_node_pairs]
-			else:
-				# generate target hops, probe them in direct mode
-				target_hops = generate_hops(num_target_hops, num_channels, MIN_CAPACITY_SYNTHETIC, MAX_CAPACITY_SYNTHETIC)
-			print("Selected" if use_snapshot else "Generated", len(target_hops), "target hops with", num_channels, "channels.")
-			# probe target hops in direct mode
-			gain_bs_synthetic_value, speed_bs_synthetic_value = probe_hops_direct(target_hops, bs=True, jamming=jamming)
-			gain_nbs_synthetic_value, speed_nbs_synthetic_value = probe_hops_direct(target_hops, bs=False, jamming=jamming)
-			gain_list_bs_synthetic.append(gain_nbs_synthetic_value)
-			gain_list_nbs_synthetic.append(gain_nbs_synthetic_value)
-			speed_list_bs_synthetic.append(speed_bs_synthetic_value)
-			speed_list_nbs_synthetic.append(speed_nbs_synthetic_value)
-			if use_snapshot:
-				# probe target hops in snapshot mode
-				gain_nbs_bs_snapshot_value,	speed_bs_snapshot_value = prober.probe_hops(target_hops_node_pairs, bs=True, jamming=jamming)
-				gain_nbs_snapshot_value,speed_nbs_snapshot_value = prober.probe_hops(target_hops_node_pairs, bs=False, jamming=jamming)
-				gain_list_bs_snapshot.append(gain_nbs_bs_snapshot_value)
-				gain_list_nbs_snapshot.append(gain_nbs_snapshot_value)
-				speed_list_bs_snapshot.append(speed_bs_snapshot_value)
-				speed_list_nbs_snapshot.append(speed_nbs_snapshot_value)
-		gains_bs_synthetic[i] 	= gain_list_bs_synthetic
-		gains_nbs_synthetic[i] 	= gain_list_nbs_synthetic
-		speed_bs_synthetic[i]	= speed_list_bs_synthetic
-		speed_nbs_synthetic[i]	= speed_list_nbs_synthetic
-		if use_snapshot:
-			gains_bs_snapshot[i] 	= gain_list_bs_snapshot
-			gains_nbs_snapshot[i] 	= gain_list_nbs_snapshot
-			speed_bs_snapshot[i]	= speed_list_bs_snapshot
-			speed_nbs_snapshot[i]	= speed_list_nbs_snapshot
-	# prepare data for information gains plot
-	y_data_gains_plot = [
-		(gains_nbs_synthetic,	"Direct probing (NBS = BS)","-",	"blue"),
-		(gains_nbs_snapshot,	"Remote probing, NBS",		"-.",	"green"),
-		(gains_bs_snapshot,		"Remote probing, BS",		":",	"red"), 
-		] if use_snapshot else [
-		(gains_nbs_synthetic,	"Direct probing (NBS = BS)","-",	"blue")
-		]
-	# prepare data for probing speeds plot
-	y_data_speed_plot = [
-		(speed_nbs_synthetic,	"Direct probing, NBS",	"-",	"green"),
-		(speed_bs_synthetic,	"Direct probing, BS", 	"--",	"red"),
-		(speed_nbs_snapshot,	"Remote probing, NBS",	"-.",	"green"),
-		(speed_bs_snapshot,		"Remote probing, BS",	":",	"red"),
-		] if use_snapshot else [
-		(speed_nbs_synthetic,	"Direct probing, NBS",	"-",	"green"),
-		(speed_bs_synthetic,	"Direct probing, BS", 	"--",	"red"),
-		]
-	comment = ("Runs per experiment: " + str(num_runs_per_experiment) + 
-		", target hops: " + str(num_target_hops) + 
-		(", snapshot date: " + prober.snapshot_date) if use_snapshot else "")
-	targets_source = "snapshot" if use_snapshot else "synthetic"
-	jamming_suffix = "jamming-enhanced" if jamming else "non-enhanced"
-	extension = ".pdf"
+	def run_one_instance_of_experiment_1(jamming, remote_probing, bs):
+		'''
+			Run experiment for all numbers of channels with one parameter set.
+			Yields two lines on two graphs: gains and speeds.
+		'''
+		gains 	= [0 for _ in range(len(NUM_CHANNELS_IN_TARGET_HOPS))]
+		speeds 	= [0 for _ in range(len(NUM_CHANNELS_IN_TARGET_HOPS))]
+		for i, num_channels in enumerate(NUM_CHANNELS_IN_TARGET_HOPS):
+			#print("\n\nN = ", num_channels)
+			gain_list, speed_list = [], []
+			for num_experiment in range(num_runs_per_experiment):
+				#print("  experiment", num_experiment)
+				if prober is not None:
+					# pick target hops from snapshot, probe them in direct and remote modes
+					target_hops_node_pairs = prober.choose_target_hops_with_n_channels(num_target_hops, num_channels)
+					target_hops = [prober.lnhopgraph[u][v]["hop"] for (u,v) in target_hops_node_pairs]
+				else:
+					# generate target hops, probe them in direct mode
+					target_hops = generate_hops(num_target_hops, num_channels, MIN_CAPACITY_SYNTHETIC, MAX_CAPACITY_SYNTHETIC)
+				#print("Selected" if prober is not None else "Generated", len(target_hops), "target hops with", num_channels, "channels.")
+				if remote_probing:
+					assert(prober is not None)
+					gain, speed = prober.probe_hops(target_hops_node_pairs, bs=bs, jamming=jamming)
+				else:
+					gain, speed = probe_hops_direct(target_hops, bs=bs, jamming=jamming)
+				gain_list.append(gain)
+				speed_list.append(speed)
+			gains[i] = gain_list
+			speeds[i] = speed_list
+		# prepare data for information gains plot
+		remote_or_direct = "Remote" if remote_probing else "Direct"
+		bs_or_nbs = "non-optimized" if bs else "optimized"
+		colors = ["blue", "purple", "red", "orange"]
+		color = (colors[3] if bs else colors[2]) if remote_probing else (colors[1] if bs else colors[0])
+		lines = ["-", "--", "-.", ":"]
+		line = (lines[3] if bs else lines[2]) if remote_probing else (lines[1] if bs else lines[0])
+		gains_line = (gains, remote_or_direct + " probing", 
+			"-" if not remote_probing else "-.", "blue" if not remote_probing else "red")
+		speed_line = (speeds, remote_or_direct + ", " + bs_or_nbs, line, color)
+		return gains_line, speed_line
+	def run_and_store_result(gains_all_lines, speed_all_lines, pos, jamming, remote_probing, bs):
+		gains_line, speed_line = run_one_instance_of_experiment_1(jamming, remote_probing, bs)
+		if pos % 2 == 0:
+			gains_all_lines[pos // 2] = gains_line
+		speed_all_lines[pos] = speed_line
+	from multiprocessing import Process, Manager
+	procs = []
+	manager = Manager()
+	y_gains_lines_vanilla = manager.list([0 for _ in range(2)])
+	y_gains_lines_jamming = manager.list([0 for _ in range(2)])
+	y_speed_lines_vanilla = manager.list([0 for _ in range(4)])
+	y_speed_lines_jamming = manager.list([0 for _ in range(4)])
+	for i, jamming in enumerate((False, True)):
+		for j, remote_probing in enumerate((False, True)):
+			for k, bs in enumerate((False, True)):
+				gains_results = y_gains_lines_jamming if jamming else y_gains_lines_vanilla
+				speed_results = y_speed_lines_jamming if jamming else y_speed_lines_vanilla
+				pos = 2 * j + k
+				proc = Process(target=run_and_store_result, args=(gains_results, speed_results, pos, jamming, remote_probing, bs, ))
+				procs.append(proc)
+				proc.start()
+	for proc in procs:
+		proc.join()
+	targets_source = "snapshot" if prober is not None else "synthetic"
+	x_label = "\nNumber of channels in target hops\n"
+	
 	plot(
-		x_data 		= NUM_CHANNELS_IN_TARGET_HOPS,
-		y_data_list = y_data_gains_plot,
-		x_label 	= "Number of channels in target hops.\n" + comment,
-		y_label 	= "Achieved information gain\n (share of initial uncertainty)",
-		title		= "Achieved information gain (" + jamming_suffix + " probing)\n",
-		filename 	= "channels_gains_" + targets_source + "_" + jamming_suffix,
-		extension	= extension)
+		x_data 			= NUM_CHANNELS_IN_TARGET_HOPS,
+		y_data_lists	= [y_gains_lines_vanilla, y_gains_lines_jamming],
+		x_label 		= x_label,
+		y_label 		= "Information gain (share of initial uncertainty)\n",
+		title			= "",#"Information gain\n",
+		filename 		= "gains_" + targets_source)
 	plot(
-		x_data 		= NUM_CHANNELS_IN_TARGET_HOPS,
-		y_data_list = y_data_speed_plot, 
-		x_label 	= "Number of channels in target hops.\n" + comment,
-		y_label 	= "Probing speed (bits / message)", 
-		title 		= "Probing speed (" + jamming_suffix + " probing)\n",
-		filename 	= "channels_speed_" + targets_source + "_" + jamming_suffix,
-		extension	= extension)
+		x_data 			= NUM_CHANNELS_IN_TARGET_HOPS,
+		y_data_lists	= [y_speed_lines_vanilla, y_speed_lines_jamming],
+		x_label 		= x_label,
+		y_label 		= "Probing speed (bits / message)\n", 
+		title 			= "",#"Probing speed\n",
+		filename 		= "speed_" + targets_source)
 
 	print("\n\n**** Experiment 1 complete ****")
 
@@ -290,61 +279,3 @@ def experiment_2(num_target_hops, num_runs_per_experiment):
 
 	print("\n\n**** Experiment 2 complete ****")
 
-
-def experiment_3(num_target_hops, num_runs_per_experiment, max_ratio):
-	'''
-		Study two-channel hops depending on ratio of long side to short.
-		(This experiment was excluded from the 2021-09 version of the paper.)
-
-		Parameters:
-		- num_target_hops: how many target hops to consider
-		- num_runs_per_experiment: how many times to run each experiment (results are averaged)
-		- max_ratio: consider the ratio of channel capacities from 1 to max_ratio
-
-		Return: None (save resulting plots)
-	'''
-
-	print("\n\n**** Running experiment 3 ****")
-
-	SHORT_SIDE_CAPACITY = 2**20
-	RATIOS = [r for r in range(1, max_ratio + 1)]
-
-	achieved_gains_ratios 	= [0 for _ in range(len(RATIOS))]
-	speed_bs_ratios 		= [0 for _ in range(len(RATIOS))]
-	speed_nbs_ratios 		= [0 for _ in range(len(RATIOS))]
-
-	for i,ratio in enumerate(RATIOS):
-		#print("\n\nR = ", ratio)
-		capacities = [SHORT_SIDE_CAPACITY, ratio * SHORT_SIDE_CAPACITY]
-		gain_list, speed_list_bs, speed_list_nbs = [], [], []
-		for _ in range(num_runs_per_experiment):
-			target_hops = [Hop(capacities, [0,1], [0,1]) for _ in range(num_target_hops)]
-			gain_bs,	speed_bs 	= probe_hops_direct(target_hops, bs = True, jamming = False)
-			gain_nbs,	speed_nbs 	= probe_hops_direct(target_hops, bs = False, jamming = False)
-			assert(abs((gain_bs-gain_nbs) / gain_nbs) < 0.05), (gain_bs, gain_nbs)
-			gain_list.append(gain_nbs)
-			speed_list_bs.append(speed_bs)
-			speed_list_nbs.append(speed_nbs)
-		achieved_gains_ratios[i] = gain_list
-		speed_bs_ratios[i]	= speed_list_bs
-		speed_nbs_ratios[i]	= speed_list_nbs
-
-	comment = "Runs per experiment: " + str(num_runs_per_experiment) + ", target hops: " + str(num_target_hops)
-	plot(
-		x_data		= RATIOS,
-		y_data_list = [(achieved_gains_ratios, "Direct probing (bs = nbs)", "-", "blue")], 
-		x_label 	= "Ratio of capacities. " + comment,
-		y_label 	= "Achieved information gain",
-		title		= "Achieved information gain (synthetic hops)",
-		filename 	= "ratios_gains")
-	plot(
-		x_data		= RATIOS,
-		y_data_list = [
-		(speed_bs_ratios, "Direct probing, bs", "-", "red"),
-		(speed_nbs_ratios, "Direct probing, nbs", "-", "green")], 
-		x_label 	= "Ratio of capacities. " + comment,
-		y_label 	= "Probing speed (bits / message)", 
-		title 		= "Probing speed with bs and nbs methods (synthetic hops)",
-		filename 	= "ratios_speed")
-
-	print("\n\n**** Experiment 3 complete ****")
