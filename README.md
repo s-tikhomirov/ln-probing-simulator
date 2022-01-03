@@ -2,7 +2,7 @@
 
 The Lightning Network Probing Simulator models channel balance probing in the Lightning network and measures the attacker's information gain and probing speed under various attack assumptions.
 
-This software accompanies the paper "[Analysis and Probing of Parallel Channels in the Lightning Network](https://eprint.iacr.org/2021/384)" by Alex Biryukov, Gleb Naumenko, and Sergei Tikhomirov. See also: [blog post](https://s-tikhomirov.github.io/lightning-probing-2/), [video presentation](https://youtu.be/ZiD7NqQ1YZc).
+This software accompanies the paper "[Analysis and Probing of Parallel Channels in the Lightning Network](https://eprint.iacr.org/2021/384)" by Alex Biryukov, Gleb Naumenko, and Sergei Tikhomirov. See also: [blog post](https://s-tikhomirov.github.io/lightning-probing-2/), [slides](https://docs.google.com/presentation/d/1IPZdpSVX2B636G6m4o66jQCk8RAO5HUy_HD_ITgR_-M/edit?usp=sharing), [video presentation](https://youtu.be/ZiD7NqQ1YZc).
 
 Requirements: `python3`, `networkx`, `matplotlib`.
 
